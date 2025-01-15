@@ -37,3 +37,7 @@ ggplot(RKI_sites_clean |> dplyr::filter(pathogen == "Influenza A+B")) +
              size = 0.5) +
   scale_y_continuous(trans = "log10") +
   facet_wrap(~state) + theme_bw()
+
+#Hospitalization data 
+RKI_hosp_triangle <- readr::read_csv("https://raw.githubusercontent.com/KITmetricslab/hospitalization-nowcast-hub/refs/heads/main/data-truth/COVID-19/COVID-19_hospitalizations.csv")
+RKI_hosp_by_report <- readr::read_csv("https://raw.githubusercontent.com/KITmetricslab/hospitalization-nowcast-hub/refs/heads/main/data-truth/COVID-19/COVID-19_hospitalizations_by_reporting.csv")
