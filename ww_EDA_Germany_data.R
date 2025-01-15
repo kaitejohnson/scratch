@@ -41,3 +41,12 @@ ggplot(RKI_sites_clean |> dplyr::filter(pathogen == "Influenza A+B")) +
 #Hospitalization data 
 RKI_hosp_triangle <- readr::read_csv("https://raw.githubusercontent.com/KITmetricslab/hospitalization-nowcast-hub/refs/heads/main/data-truth/COVID-19/COVID-19_hospitalizations.csv")
 RKI_hosp_by_report <- readr::read_csv("https://raw.githubusercontent.com/KITmetricslab/hospitalization-nowcast-hub/refs/heads/main/data-truth/COVID-19/COVID-19_hospitalizations_by_reporting.csv")
+
+RKI_hosp  <- RKI_hosp_by_report |> 
+  dplyr::filter(age_group == "00+") 
+
+ggplot(RKI_hosp |> dplyr::filter(location != "DE")) + 
+  geom_point(aes(x = date, y = value), size = 0.5) +
+  facet_wrap(~location, scales = "free_y")
+
+ggplot(RKI_hosp_triangle)
