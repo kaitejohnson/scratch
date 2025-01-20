@@ -1,0 +1,323 @@
+---
+title: "Baseline nowcast EDA"
+output: html_document
+date: "2025-01-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(epinowcast)
+library(zoo)
+library(dplyr)
+```
+
+## R Markdown
+
+This R markdown is meant to just create some objects that look like 
+epinowcast in their input structure, take a first pass at estimating a 
+reporting delay using the empirical delays observed in the data, and then 
+use epinowcast postprocessing to apply that reporting delay to generate
+a nowcast. 
+
+Let's start by pretending we have a data in the format of a reporting triangle\
+(reference date in each row, delay in each column) for a single population. Here
+we will use the data from RKI for all age groups and the whole country. 
+
+We will assume that the data is reported with both reference date and report 
+date to start. This data spans reference dates from April 6th, 2021 to
+October 20, 2021, and only includes observations available through October 20,
+2021. This means that the data is right-truncated, as the number of admissions
+by reference date at recent times will be incomplete, since not all admissions
+will have been reported as of that time. 
+```{r load-data}
+observed_long <- epinowcast::germany_covid19_hosp |> 
+  dplyr::filter(location == "DE", age_group == "00+") 
+
+```
+
+Let's start by plotting all of the values reported on the day of admissions, 
+and then compare that to the total admissions observed on each reference date.
+
+```{r make-some-exploratory-plots}
+ggplot() + 
+  geom_line(
+    # Plot data only for 0 day delay
+    data = observed_long |> 
+      filter(reference_date == report_date),
+    aes(x = reference_date, y = confirm), color = "gray") +
+  theme_bw() +
+  xlab("Reference date") + ylab("Confirmed admissions on date of admissions")
+ggplot() + 
+  geom_line(
+    # Plot the data summed across reporting days
+    data = observed_long |> 
+      group_by(reference_date) |>
+      summarise(total_confirmed = sum(confirm)),
+    aes(x = reference_date, y = total_confirmed), color = "darkred") +
+  theme_bw()+
+    xlab("Reference date") + ylab("Total confirmed admissions")
+
+```
+As can be seen, the first figure represents only a very small proportion of the
+total admissions across report dates, indicating that only a fraction of admissions
+are reported on the date that patients were admitted. 
+
+Plotting by summing across report dates, we are able to observe the 
+right-truncation. While the first plot shows an increase in recent admissions,
+the latter shows an artificial decline due to the recent data only being 
+partially observed. Neither of these two ways of viewing the data provide the 
+complete picture of both the magnitude and direction of admissions. 
+
+What we ideally want is an estimate of how many total hospital admissions will
+eventually be reported on each reference date. The simplest way to do this would
+be to use the reference dates for which the data has been nearly completely 
+reported to estimate the probability of an admissions being reported as a function
+of the time from the admission event, which we will call the delay. Let's take
+a look at a few different maximum delays to get a rough idea of what might be
+a good cutoff. 
+```{r explore-max-delays}
+obs_before_delay <- c()
+
+# Compute delays out til 81 days, since this is the maximum in this dataset
+for( i in c(seq(from = 0, to = 80, by = 10), 81)){
+  obs_before_delay_i <- observed_long |>
+    filter(report_date <= reference_date + i ) |>
+    group_by(reference_date) |>
+    summarise(confirmed_before_delay = sum(confirm)) |>
+    mutate(delay = i)
+    obs_before_delay <- bind_rows(obs_before_delay, obs_before_delay_i)
+}
+
+# Combine with total confirmed to get proportion already reported 
+obs_by_delay<- obs_before_delay |>
+  mutate(reference_date = lubridate::ymd(reference_date)) |>
+  left_join(observed_long |>
+              group_by(reference_date) |>
+              summarise(total_confirmed = sum(confirm)) |>
+              mutate(reference_date = lubridate::ymd(reference_date)),
+            by = "reference_date") |>
+  dplyr::mutate(prop_already_reported= confirmed_before_delay/total_confirmed)
+
+ggplot(obs_by_delay |> filter(delay >= 40))+
+  geom_line(aes(x = reference_date, y = confirmed_before_delay,
+                group = delay, color = delay)) +
+  theme_bw() +
+  xlab("Reference date") +
+  ylab("Number of confirmed admissions after specified delay")
+
+ggplot(obs_by_delay, aes(x = reference_date, y = prop_already_reported,
+                     group = delay, color = delay)) +
+  geom_line() + theme_bw() +
+  xlab("Reference date") + ylab("Proportion already reported by delay X")
+```
+The data is reported such that there are no report date greater than 81 days 
+from the reference date. It does appear that there are still reports even 81 
+days beyond the reference date, so to be safe, we would probably want to 
+estimate a reporting hazard function for a full 81 days. 
+
+To do so, we would want to truncate the data to only include data with a 
+complete 81 days of data. We can use the built in `epinowcast` function,
+`enw_filter_reference_dates()` to do this:
+```{r truncate-data}
+max_delay <- 81
+max_date <- as.IDate(max(observed_long$reference_date))
+obs_long_complete_reports <- observed_long |>
+  enw_filter_reference_dates(latest_date = max_date - max_delay) |>
+  dplyr::mutate(delay = report_date - reference_date)
+
+# This way, if we compute the delay, we are going to see that for all reference 
+# dates in this truncated dataset, we have a corresponding report date out until
+# the maximum delay. 
+
+n_dates_w_max_delay <- obs_long_complete_reports |> 
+  filter(delay == max_delay) |> 
+  pull(reference_date) |> length()
+print(n_dates_w_max_delay)
+
+n_reference_dates <- obs_long_complete_reports |>
+  distinct(reference_date) |> nrow()
+print(n_reference_dates)
+
+```
+We now have 117 reference dates that span from April 6th, 2021 to July 31, 2021. 
+In this simple example, we aren't going to worry about the fact that the
+delay distribution, or the probability of reporting with a given delay, might
+change as a function of the time of year or the incident admissions (which we
+might know to be true in practice). Since this is a baseline method, the goal
+is that any feature to incorporate other factors, such as time-varying delays or
+weekday effects, will be compared to this baseline to assess the added value. 
+
+Let's try using the `epinowcast` functions to pre-process the data we are going
+to fit to, starting from the original package data, with the delay informed
+by the previos EDA. 
+```{r}
+max_delay <- 81
+max_date <- as.IDate(max(epinowcast::germany_covid19_hosp$reference_date))
+
+# Again filter to all age groups, and all of Germany
+complete_reports <- epinowcast::germany_covid19_hosp[location == "DE"][age_group == "00+"] |>
+  # Remove the reference dates that have incomplete data 
+  enw_filter_reference_dates(latest_date = max_date - max_delay) 
+pobs <- enw_preprocess_data(complete_reports, max_delay = max_delay)
+```
+`pobs` now contains everything we will need to estimate the reporting delay 
+distribution. Let's take a look at some of the individual elements. 
+```{r}
+reporting_trinagle <- pobs$reporting_triangle[[1]] 
+# The reporting triangle is a matrix where rows are reference dates and columns
+# are the delay, the entries of the matrix are the number of reports on that day.
+# The row sum gives you the total confirmed. Dividing the entries of each row
+# by its row sum gives you an observed delay distribution (will plot below)
+
+confirm_long <- pobs$new_confirm[[1]]
+# This is the same information in tidy data format
+
+ggplot(confirm_long) +
+  geom_tile(aes(y = reference_date, x = delay, fill = cum_prop_reported))
+ggplot(confirm_long) +
+  geom_tile(aes(y = reference_date, x = delay, fill = new_confirm/max_confirm))
+
+# Plot the observed delay distributions 
+
+ggplot(confirm_long) + 
+  geom_line(aes(x= delay, 
+                y = new_confirm/max_confirm, 
+                group = reference_date,
+                color = reference_date),
+            alpha = 0.3) +
+  theme_bw() + xlab("Delay") + ylab("Proportion reported")
+
+ggplot(confirm_long) + 
+  geom_line(aes(x= delay, 
+                y = new_confirm, 
+                group = reference_date,
+                color = max_confirm),
+            alpha = 0.3) +
+  theme_bw() + xlab("Delay") + ylab("Number reported")
+
+```
+
+Estimate a delay distribution from the available complete delay distributions 
+by simply computing the weighted average:
+$$
+\hat{h}(d) =  \frac{\sum_{t=1}^{T_{max}} c_{t,d}} {\sum_{d=1}^{D_{max}} \sum_{t=1}^{T_{max}} c_{t,d}} 
+$$
+where $c_{t,d}$ are the new confirmed cases from reference time $t$ reported at
+reference time $d$. 
+
+
+```{r}
+
+# First compute the denominator, which is the sum over all incident cases
+# reported with any delay 
+total_cases <- confirm_long |>
+  group_by(reference_date) |>
+  summarise(total_cases_by_ref = sum(new_confirm))
+
+# Next compute the numerator, the sum of the cases at each delay d, across 
+# all time points t. 
+all_cases <- sum(total_cases$total_cases_by_ref)
+# Compute the fraction of all cases that were ever reported on a particular
+# delay d
+mean_delay <- confirm_long |>
+  dplyr::group_by(delay) |>
+  summarise(exp_prop_report = sum(new_confirm)/all_cases)
+
+ggplot(mean_delay) +
+  geom_line(aes(x = delay, y = exp_prop_report)) + 
+  theme_bw()  + xlab("Delay") + ylab("Empirical portion reported h(d)")
+
+ggplot(confirm_long |> dplyr::left_join(mean_delay, by = "delay")) +
+  geom_line(aes(x = delay, y = new_confirm/max_confirm, 
+                color = reference_date,
+                group = reference_date),
+              alpha = 0.1) + 
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2)+
+  theme_bw() + xlab("Delay") + ylab("Expected vs observed proportion reported") 
+```
+Now that we have computed an expected delay empirically, we can estimate the
+observation error dispersion, using the expected value of the observations for 
+each reference date, and comparing it to the observed values. We will borrow
+Johannes code from https://github.com/KITmetricslab/hospitalization-nowcast-hub/blob/main/code/baseline/functions.R
+to do a MLE estimation of the negative binomial dispersion parameter
+```{r estimate-dispersion}
+# fit the size parameter of a negative binomial via maximum likelihood
+#' @param x the observed values, here this will be the vector of `new_confirm` 
+#' in order of increasing delay
+#' @param mu the expected values, here this will be the `max_confirm` multiplied
+#' by the `prob_report` at each delay for each reference date
+fit_nb <- function(x, mu){
+  nllik <- function(size){-sum(dnbinom(x = x, mu = mu, size = size, log = TRUE), na.rm = TRUE)}
+  opt <- optimize(nllik, c(0.1, 1000))
+  opt$minimum
+}
+
+# We just want one estimate of the dispersion, so we're going to string together
+# the data from all the reference dates
+
+df_w_expectations <- confirm_long |> 
+  left_join(mean_delay, by = "delay") |>
+  mutate(mu = max_confirm*exp_prop_report)
+
+size_estimate <- fit_nb(df_w_expectations$new_confirm, df_w_expectations$mu)
+
+```
+
+```{r simulate-from-model}
+df_w_sims <- df_w_expectations |>
+  dplyr::mutate(sim_confirm = NULL)
+for (i in 1:nrow(df_w_expectations)){
+  df_w_sims$sim_confirm[i] <-  rnbinom(n = 1,
+                               mu = df_w_expectations$max_confirm[i]*df_w_expectations$exp_prop_report[i], 
+                               size = size_estimate)
+}
+
+ggplot(df_w_sims) + geom_line(aes(x = delay, y = sim_confirm/max_confirm,
+                                  group = reference_date),
+                              color = "green", alpha = 0.1) +
+  geom_line(aes(x = delay, y = new_confirm/max_confirm, 
+                color = reference_date,
+                group = reference_date),
+            alpha = 0.1) + 
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2) +
+  theme_bw()+
+  coord_cartesian(ylim = c(0, 0.82))+
+  xlab("Delay") + ylab("Expected vs observed proportion reported") +
+  ggtitle("Both simulated and observed proportion reported")
+# Make into separate plots for comparison 
+
+ggplot(df_w_sims) + geom_line(aes(x = delay, y = sim_confirm/max_confirm,
+                                  group = reference_date),
+                              color = "green", alpha = 0.1) +
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2) +
+  theme_bw()+
+  coord_cartesian(ylim = c(0, 0.82))+
+  xlab("Delay") + ylab("Expected vs observed proportion reported") +
+  ggtitle("Simulated empirical proportion reported")
+
+ggplot(df_w_sims) + 
+  geom_line(aes(x = delay, y = new_confirm/max_confirm, 
+                color = reference_date,
+                group = reference_date),
+            alpha = 0.1) + 
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2) +
+  theme_bw()+
+  coord_cartesian(ylim = c(0, 0.82))+
+  xlab("Delay") + ylab("Observed proportion reported")
+
+```
+
+
+
+
+
+# Find the dispersion in the observation model
+fit_nb <- function(x, mu){
+  nllik <- function(size){-sum(dnbinom(x = x, mu = mu, size = size, log = TRUE), na.rm = TRUE)}
+  opt <- optimize(nllik, c(0.1, 1000))
+  opt$minimum
+}
+
+
+
+```
