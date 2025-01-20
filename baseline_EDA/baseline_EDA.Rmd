@@ -9,9 +9,11 @@ knitr::opts_chunk$set(echo = TRUE)
 library(epinowcast)
 library(zoo)
 library(dplyr)
+library(ggplot2)
+library(data.table)
 ```
 
-## R Markdown
+## Explore the data 
 
 This R markdown is meant to just create some objects that look like 
 epinowcast in their input structure, take a first pass at estimating a 
@@ -58,7 +60,8 @@ ggplot() +
     xlab("Reference date") + ylab("Total confirmed admissions")
 
 ```
-As can be seen, the first figure represents only a very small proportion of the
+
+The first figure represents only a very small proportion of the
 total admissions across report dates, indicating that only a fraction of admissions
 are reported on the date that patients were admitted. 
 
@@ -110,6 +113,7 @@ ggplot(obs_by_delay, aes(x = reference_date, y = prop_already_reported,
   geom_line() + theme_bw() +
   xlab("Reference date") + ylab("Proportion already reported by delay X")
 ```
+
 The data is reported such that there are no report date greater than 81 days 
 from the reference date. It does appear that there are still reports even 81 
 days beyond the reference date, so to be safe, we would probably want to 
@@ -139,6 +143,9 @@ n_reference_dates <- obs_long_complete_reports |>
 print(n_reference_dates)
 
 ```
+
+## Pre-process the data 
+
 We now have 117 reference dates that span from April 6th, 2021 to July 31, 2021. 
 In this simple example, we aren't going to worry about the fact that the
 delay distribution, or the probability of reporting with a given delay, might
@@ -197,6 +204,7 @@ ggplot(confirm_long) +
 
 ```
 
+## Compute an empirical delay distribution 
 Estimate a delay distribution from the available complete delay distributions 
 by simply computing the weighted average:
 $$
@@ -232,9 +240,12 @@ ggplot(confirm_long |> dplyr::left_join(mean_delay, by = "delay")) +
                 color = reference_date,
                 group = reference_date),
               alpha = 0.1) + 
-  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2)+
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", linewidth = 1.2)+
   theme_bw() + xlab("Delay") + ylab("Expected vs observed proportion reported") 
 ```
+
+## Estimate negative binomial observation error
+
 Now that we have computed an expected delay empirically, we can estimate the
 observation error dispersion, using the expected value of the observations for 
 each reference date, and comparing it to the observed values. We will borrow
@@ -278,7 +289,7 @@ ggplot(df_w_sims) + geom_line(aes(x = delay, y = sim_confirm/max_confirm,
                 color = reference_date,
                 group = reference_date),
             alpha = 0.1) + 
-  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2) +
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", linewidth = 1.2) +
   theme_bw()+
   coord_cartesian(ylim = c(0, 0.82))+
   xlab("Delay") + ylab("Expected vs observed proportion reported") +
@@ -288,7 +299,7 @@ ggplot(df_w_sims) + geom_line(aes(x = delay, y = sim_confirm/max_confirm,
 ggplot(df_w_sims) + geom_line(aes(x = delay, y = sim_confirm/max_confirm,
                                   group = reference_date),
                               color = "green", alpha = 0.1) +
-  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2) +
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", linewidth = 1.2) +
   theme_bw()+
   coord_cartesian(ylim = c(0, 0.82))+
   xlab("Delay") + ylab("Expected vs observed proportion reported") +
@@ -299,13 +310,15 @@ ggplot(df_w_sims) +
                 color = reference_date,
                 group = reference_date),
             alpha = 0.1) + 
-  geom_line(aes(x = delay, y = exp_prop_report), color = "black", size = 1.2) +
+  geom_line(aes(x = delay, y = exp_prop_report), color = "black", linewidth = 1.2) +
   theme_bw()+
   coord_cartesian(ylim = c(0, 0.82))+
   xlab("Delay") + ylab("Observed proportion reported")
 
 ```
+
 ## Apply the estimate to the data
+
 We initially truncated the data to only data with complete reports 81 days 
 beyond the reference date. Let's now use our estimate to take a first pass at 
 applying it to generate a nowcast.
@@ -350,26 +363,37 @@ baseline_nowcast <- new_confirm_exp |>
   ungroup() |>
   left_join(mean_delay, by = "delay")
 
+# Quick back of envelop calc
+test <- baseline_nowcast |> 
+  mutate(exp_max_report = confirm/exp_cum_report)
+
 n_draws = 100
 ncs <- c()
 for(i in 1:n_draws){
   # Create a new dataframe for this draw
   nc_i <- baseline_nowcast |> mutate(
     draw = i,
-    exp_max_confirm = NULL
+    exp_max_confirm = NULL,
+    exp_max_report = confirm/exp_cum_report
   )
   # For each row of the dataframe, compute the expected number of final reports
-  # by drawing from a negative binomial with dispersion from the size estimate
-  # and the expectation from dividing by the inverse of the cumulative 
-  # number of expected reports. We'll pad for 0s in the confirm for now, will
+  # by summing the number already confirmed plus the expected remainder to be 
+  # confirmed, estimated by drawing from a negative binomial with dispersion 
+  # from the size estimate
+  # and the mean being the the 
+  # cumulative number confirmed divided by the inverse of the cumulative fraction already 
+  # reported. We'll pad for 0s in the confirm for now, will
   # come up with something more robust and estimated later.
   nc_i$exp_max_confirm <- rnbinom(n = nrow(nc_i), 
                                   size = size_estimate,
-                                  mu = (nc_i$confirm+abs(rnorm(nrow(nc_i), 1e-5,3)))/nc_i$exp_cum_report)
+                                  mu = (nc_i$confirm+0.01)/nc_i$exp_cum_report
+                                  )
   # Create a long data frame binding all the draws together 
   ncs <- bind_rows(ncs, nc_i)
 }
 ```
+
+Make some plots 
 ```{r plot-the-nowcasts}
 ncs_summary <- ncs |> 
   mutate(reference_date = lubridate::ymd(reference_date)) |>
@@ -402,6 +426,7 @@ ggplot(ncs_w_summary) +
   geom_point(aes(x = reference_date, y = max_confirm), color = "red") +
   theme_bw()+
   xlab("Reference date") +
-  ylab("Nowcasted admissions alongside partially observed admissions")
+  ylab("Nowcasted admissions alongside partially observed admissions") + 
+  scale_y_continuous(trans = "log10")
 
 ```
