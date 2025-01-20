@@ -266,11 +266,10 @@ size_estimate <- fit_nb(df_w_expectations$new_confirm, df_w_expectations$mu)
 ```{r simulate-from-model}
 df_w_sims <- df_w_expectations |>
   dplyr::mutate(sim_confirm = NULL)
-for (i in 1:nrow(df_w_expectations)){
-  df_w_sims$sim_confirm[i] <-  rnbinom(n = 1,
-                               mu = df_w_expectations$max_confirm[i]*df_w_expectations$exp_prop_report[i], 
+  df_w_sims$sim_confirm <-rnbinom(n = nrow(df_w_expectations),
+                               mu = df_w_expectations$max_confirm*df_w_expectations$exp_prop_report, 
                                size = size_estimate)
-}
+
 
 ggplot(df_w_sims) + geom_line(aes(x = delay, y = sim_confirm/max_confirm,
                                   group = reference_date),
@@ -306,18 +305,103 @@ ggplot(df_w_sims) +
   xlab("Delay") + ylab("Observed proportion reported")
 
 ```
+## Apply the estimate to the data
+We initially truncated the data to only data with complete reports 81 days 
+beyond the reference date. Let's now use our estimate to take a first pass at 
+applying it to generate a nowcast.
 
+All we need from the above is the mean expected prop report and the dispersion
+estimate. 
 
+What we should have done (and will fix to do another time) is filtered by 
+report date for the training dataset, so we estimated a delay with only a
+portion of the data.
 
+Then we could have generated a nowcast from the estimate, and evaluated it 
+because we'd have held out data that is in fact complete. 
 
+For now since we're just exploring, we'll just try generating the nowcast
+as if its in real-time in October 2021
 
-# Find the dispersion in the observation model
-fit_nb <- function(x, mu){
-  nllik <- function(size){-sum(dnbinom(x = x, mu = mu, size = size, log = TRUE), na.rm = TRUE)}
-  opt <- optimize(nllik, c(0.1, 1000))
-  opt$minimum
+```{r}
+head(mean_delay)
+print(size_estimate)
+
+# This is all the data, within incomplete reporting after July. 
+partial_and_comp_reports <- epinowcast::germany_covid19_hosp[location == "DE"][age_group == "00+"] 
+
+# Pre-process the data
+pobs_exp<- enw_preprocess_data(partial_and_comp_reports, max_delay = 81)
+
+# Get the `new_confirm` object
+new_confirm_exp <- pobs_exp$new_confirm[[1]]
+
+# Get the cum sum of the reporting delay
+mean_delay <- mean_delay |>
+  mutate(exp_cum_report = cumsum(exp_prop_report))
+
+# Filter to only those reference dates that are incomplete, 
+# and then filter to the maximum report date within a reference date.
+# This should give you data from July to October with a delay from 0 to 81.
+baseline_nowcast <- new_confirm_exp |> 
+  filter(reference_date >= max(reference_date) - max_delay)|>
+  group_by(reference_date) |>
+  filter(report_date == max(report_date)) |>
+  ungroup() |>
+  left_join(mean_delay, by = "delay")
+
+n_draws = 100
+ncs <- c()
+for(i in 1:n_draws){
+  # Create a new dataframe for this draw
+  nc_i <- baseline_nowcast |> mutate(
+    draw = i,
+    exp_max_confirm = NULL
+  )
+  # For each row of the dataframe, compute the expected number of final reports
+  # by drawing from a negative binomial with dispersion from the size estimate
+  # and the expectation from dividing by the inverse of the cumulative 
+  # number of expected reports. We'll pad for 0s in the confirm for now, will
+  # come up with something more robust and estimated later.
+  nc_i$exp_max_confirm <- rnbinom(n = nrow(nc_i), 
+                                  size = size_estimate,
+                                  mu = (nc_i$confirm+abs(rnorm(nrow(nc_i), 1e-5,3)))/nc_i$exp_cum_report)
+  # Create a long data frame binding all the draws together 
+  ncs <- bind_rows(ncs, nc_i)
 }
+```
+```{r plot-the-nowcasts}
+ncs_summary <- ncs |> 
+  mutate(reference_date = lubridate::ymd(reference_date)) |>
+  group_by(reference_date) |>
+  summarise(median_exp_max_confirm = quantile(exp_max_confirm, 0.5),
+            lb_95th = quantile(exp_max_confirm, 0.025),
+            ub_95th = quantile(exp_max_confirm, 0.975),
+            lb_50th = quantile(exp_max_confirm, 0.25),
+            ub_50th = quantile(exp_max_confirm, 0.75)
+  )
 
+ncs_w_summary <- ncs |> mutate(reference_date = lubridate::ymd(reference_date)) |>
+  left_join(ncs_summary, by = "reference_date")
 
+ggplot(ncs_w_summary) +
+  geom_line(aes(x = reference_date, y = exp_max_confirm, group = draw),
+            alpha = 0.1) +
+  geom_line(aes(x = reference_date, y = median_exp_max_confirm), color = "black")+
+  geom_point(aes(x = reference_date, y = max_confirm), color = "red") +
+  theme_bw()+
+  xlab("Reference date") +
+  ylab("Nowcasted admissions alongside partially observed admissions")
+
+ggplot(ncs_w_summary) +
+  geom_ribbon(aes(x = reference_date, ymin = lb_50th, ymax = ub_50th),
+              alpha = 0.4) +
+    geom_ribbon(aes(x = reference_date, ymin = lb_95th, ymax = ub_95th),
+              alpha = 0.4) +
+  geom_line(aes(x = reference_date, y = median_exp_max_confirm), color = "black")+
+  geom_point(aes(x = reference_date, y = max_confirm), color = "red") +
+  theme_bw()+
+  xlab("Reference date") +
+  ylab("Nowcasted admissions alongside partially observed admissions")
 
 ```
