@@ -1,0 +1,102 @@
+---
+title: "Try out existing baseline code"
+output: html_document
+date: "2025-01-21"
+---
+
+This code tests out using code from the RESPINOW-Hub baseline model from 
+https://github.com/KITmetricslab/RESPINOW-Hub/blob/main/code/baseline/run_baseline.R
+
+A first step of the baseline package will likely be to use this/build off of 
+this code to create the package and then modify as needed. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(epinowcast)
+library(zoo)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+library(here)
+```
+
+## Load in the baseline functions
+Eventually this will be installed via an R package but for now just source them
+from a local clone of the repo in an adjacent folder
+```{r}
+source("../../RESPINOW-Hub/code/baseline/functions.R")
+source("../../RESPINOW-Hub/respinow_viz/functions.R")
+
+# Also load in custom functions we created here (mostly modifying RESPINOW functions)
+source("preprocess_rt.R") # removed any hard coding of the reporting triangle being in weeks
+source("data_as_of_new.R") # fewer assumptions about columns (year and week not necessary) + 
+# doesn't assume that the reporting triangle is in weeks and needs an additional delay to be added in days. 
+# will therefore return in the same units as input reporting triangle (so this might be weeks) 
+source("compute_exp.R")
+```
+
+Load in the data we will use. Here we're going to use the epinowcast package 
+data as a starting point. We'll exclude a portion of it that is complete so 
+that we can test the nowcasts. The reference dates and report dates run from 
+April to October of 2021. We will truncate report dates after August, this way
+we have some dates with complete observations (April - May), and some dates
+with partial observations. We can then estimate the final observations for May
+to August and evaluate using the full data, since by October all of the 
+partially observed data will have been fully reported. 
+```{r}
+# start with just one age group, one pathogen, one location... 
+full_data_long <- epinowcast::germany_covid19_hosp[location == "DE"][age_group == "00+"]
+
+forecast_date <- "2021-07-15"
+training_data_long <- full_data_long |>
+  enw_filter_report_dates(latest_date = forecast_date)
+```
+
+Use epinowcast functions to get the reporting triangle
+```{r}
+max_delay_enw <- 80
+pobs <- enw_preprocess_data(training_data_long, max_delay = max_delay_enw)
+triangle <- pobs$reporting_triangle[[1]]
+```
+
+## Use RESPINOW functions to compute the nowcast 
+We will use the `compute_nowcast()` function, but first we need to 
+reformat the epinowcast data to work with the RESPINOW functions
+```{r}
+
+# Reformat reporting triangle
+max_delay <- ncol(triangle) - 3 # 2 metadata columns + 0 
+triangle_df <- as.data.frame(triangle)
+cols_to_prefix <- as.character(c(0:(max_delay)))
+# Remove the prefix, since we will modify preprocess_reporting_triangle to
+# take in a generic reporting triangle with no specified units 
+colnames(triangle_df)[colnames(triangle_df) %in% cols_to_prefix] <- paste0("value_", cols_to_prefix)
+triangle_df <- triangle_df |> 
+  mutate(age_group = "00+", location = "DE") |>
+  rename(date = reference_date) |>
+  select(location, age_group, date, c(paste0("value_", cols_to_prefix)))
+
+
+# We will start by not using the borrowing of delays or dispersion functionality,
+# but later we can test out that functionality by passing in the data for 
+# all the age groups and applying it to a specific age group. 
+
+# Other parameters we will need:
+
+nowcast <- compute_nc(observed = triangle_df, # Reporting triangle, formatted as compute_nowcast expects 
+                              location = "DE",
+                              age_group = "00+",
+                              forecast_date = lubridate::ymd(forecast_date),
+                              borrow_delays = FALSE,
+                              borrow_dispersion = FALSE,
+                              observed2 = NULL,
+                              location2 = NULL,
+                              age_group2 = NULL,
+                              type = "additions",
+                              max_delay = max_delay,
+                              n_history_expectations = nrow(triangle_df), # number of reference dates to use in estimation of delay?
+                              n_history_dispersion = nrow(triangle_df), # number of reference dates to use in estimation of dispersion 
+                              )
+
+```
+
