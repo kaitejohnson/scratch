@@ -173,6 +173,8 @@ fit_disp <- function(observed,
   disp_params <- numeric(ncol(expectation_to_add))
   # remove rows with zero initial reports (Christmas etc)
   to_keep <- abs(expectation_to_add_already_observed[, 1]) >= 0.1
+  # The to_add_already_observed is any cases that would be added to the cumulative total cases,
+  # as of any horizon at a particular forecast date. 
   to_add_already_observed <- to_add_already_observed[to_keep, ]
   expectation_to_add_already_observed <- expectation_to_add_already_observed[to_keep, ]
   
