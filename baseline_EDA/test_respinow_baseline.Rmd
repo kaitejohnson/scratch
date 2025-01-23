@@ -33,6 +33,8 @@ source("data_as_of_new.R") # fewer assumptions about columns (year and week not 
 # doesn't assume that the reporting triangle is in weeks and needs an additional delay to be added in days. 
 # will therefore return in the same units as input reporting triangle (so this might be weeks) 
 source("compute_exp.R")
+source("compute_nc.R") # wrapper function to call all the other functions
+source("pad_matr_d.R") # same as pad_matr but for daily data
 ```
 
 Load in the data we will use. Here we're going to use the epinowcast package 
@@ -52,16 +54,20 @@ training_data_long <- full_data_long |>
   enw_filter_report_dates(latest_date = forecast_date)
 ```
 
-Use epinowcast functions to get the reporting triangle
+Use epinowcast functions to get the reporting triangle, use a max delay of 40
+for testing 
 ```{r}
-max_delay_enw <- 80
+max_delay_enw <- 41
 pobs <- enw_preprocess_data(training_data_long, max_delay = max_delay_enw)
 triangle <- pobs$reporting_triangle[[1]]
 ```
 
 ## Use RESPINOW functions to compute the nowcast 
-We will use the `compute_nowcast()` function, but first we need to 
-reformat the epinowcast data to work with the RESPINOW functions
+We will use a modified version of the `compute_nowcast()` function, which 
+we named `compute_nc()` but first we need to reformat the epinowcast data to 
+work with the RESPINOW functions. We will otherwise maintain as much of the 
+functionality from the RESPINOW codebase, except we want to remove any 
+assumptions that the data is weekly, since this data is daily. 
 ```{r}
 
 # Reformat reporting triangle
@@ -94,8 +100,8 @@ nowcast <- compute_nc(observed = triangle_df, # Reporting triangle, formatted as
                               age_group2 = NULL,
                               type = "additions",
                               max_delay = max_delay,
-                              n_history_expectations = nrow(triangle_df), # number of reference dates to use in estimation of delay?
-                              n_history_dispersion = nrow(triangle_df), # number of reference dates to use in estimation of dispersion 
+                              n_history_expectations = 50, # number of reference dates to use in estimation of delay?
+                              n_history_dispersion = 50 # number of reference dates to use in estimation of dispersion 
                               )
 
 ```

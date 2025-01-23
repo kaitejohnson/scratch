@@ -93,9 +93,7 @@ compute_nc <- function(observed,
   #                                            n_history_dispersion)
   #                            )
   
-  # Ignoring this for now since we aren't going to do the borrow delays thing
-  # to start
-  # if sharing desired: same for observed2_as_of
+
   if(borrow_delays){
     observed2_as_of <- data_as_of(observed2, age_group = age_group2, location = location2, 
                                   date = forecast_date, weekday_data_updates = weekday_data_updates, 

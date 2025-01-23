@@ -126,18 +126,21 @@ fit_disp <- function(observed,
     if(nrow(matr_observed_temp) > 0){
       # This becomes buffered on top (earlier dates) with NAs so you have a 
       # full history of expectations. Problem is point forecast here will be NAs... 
-      #matr_observed_temp <- pad_matr_d(matr_observed_temp, n_history_expectations)
+      matr_observed_temp <- pad_matr_d(matr_observed_temp, n_history_expectations)
     }else{
       matr_observed_temp <- NA*matr_observed2_temp
     }
     
     # get same subset of the reporting triangle, but filled as far as possible at forecast_date:
+    # So this is filled in with the values that were actually observed, whereas 
+    # matr_obs_temp contains NAs to mimick what was known as of the temp forecast date
     matr_observed_temp_full <- matr_observed[which(rownames(matr_observed) %in% 
                                                      tail(rownames(matr_observed_temp), 
                                                           n_history_expectations)), ]
     # this is needed to estimate dispersion parameters below
     
-    # generate retrospective point nowcast:
+    # generate retrospective point nowcast using the temp forecast date data to
+    # fill in to get the complete expectations to compare to `matr_observed_temp_full`
     point_forecasts_temp <- compute_exp(observed = matr_observed_temp,
                                         observed2 = matr_observed2_temp,
                                         n_history = n_history_expectations,
@@ -147,6 +150,7 @@ fit_disp <- function(observed,
     # structure by things already observed or not (necessary to use of partial observations)
     for(d in 1:n_horizons){
       # which indices in the matrix correspond to nowcasts at horizon d?
+      # This will be 
       inds_nowc <- indices_nowcast(matr_observed_temp, d = d - 1, w = 1,
                                    n_history_expectations = n_history_expectations)
       # compute sum of expected values for nowcast at horizon d over all elements of the reporting
