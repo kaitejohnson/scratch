@@ -5,12 +5,12 @@ We will assume we know the final number of counts reported at all reference date
 Therefore, at each reference date, we can compute an empirical CDF of the proportion of cases reported as of each week since initial admit d.
 
 $$
-p(d)_t= \frac{C_{t,d}} {C_{t, d = d_{max}}}
+p_t(d)= \frac{C_{t,d}} {C_{t, d = d_{max}}}
 $$
 
-Where $p_(d)_t$ is the monotonically increasing vector of the proportion of all diagnoses that have been reported as of delay $d$ at week $t$, and $d_{max}$ is the maximum delay, say in this case, 10 weeks.
+Where $p_t(d)$ is the monotonically increasing vector of the proportion of all diagnoses that have been reported as of delay $d$ at week $t$, and $d_{max}$ is the maximum delay, say in this case, 10 weeks.
 
-We get a distribution of $p(d)_t$ vectors by repeating this computation for all reference dates, say, for one entire year/season.
+We get a distribution of $p_t(d)$ vectors by repeating this computation for all reference dates, say, for one entire year/season.
 
 We then use the distribution of proportions at each delay to get the median and the 2.5th and 97.5th quantiles.
 
