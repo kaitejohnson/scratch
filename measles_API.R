@@ -22,7 +22,13 @@ df <- as.data.frame(do.call(rbind, results_list))
 test_measles <- content(GET("https://api.ukhsa-dashboard.data.gov.uk/themes/outbreaks/sub_themes/respiratory/topics/Measles/geography_types/Nation/geographies/England/metrics/measles_cases_casesByOnsetWeek"))
 # Go back to infectious diseases 
 test2_measles <- content(GET("https://api.ukhsa-dashboard.data.gov.uk/themes/infectious_disease/sub_themes/respiratory/topics/Measles/geography_types/Nation/geographies/England/metrics/measles_cases_casesByOnsetWeek"))
-test3_measles <- content(GET("https://api.ukhsa-dashboard.data.gov.uk/themes/infectious_disease/sub_themes/respiratory/topics/Measles/geography_types/Nation/geographies/England/metrics/measles_cases_casesByOnsetWeek"))
+#Try just London data
+test3_measles <- content(GET("https://api.ukhsa-dashboard.data.gov.uk/themes/infectious_disease/sub_themes/respiratory/topics/Measles/geography_types/Nation/geographies/London/metrics/measles_cases_casesByOnsetWeek"))
+# Remove subtheme?
+test4_measles <- content(GET("https://api.ukhsa-dashboard.data.gov.uk/themes/infectious_disease/topics/Measles/geography_types/Nation/geographies/England/metrics/measles_cases_casesByOnsetWeek"))
+# Add metrics = cases before API Name
+test5_measles <- content(GET("https://api.ukhsa-dashboard.data.gov.uk/themes/infectious_disease/sub_themes/respiratory/topics/Measles/geography_types/Nation/geographies/England/metrics/cases/measles_cases_casesByOnsetWeek"))
+
 results_list <- test_measles$results
 df <- as.data.frame(do.call(rbind, results_list))
 
