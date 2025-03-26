@@ -11,14 +11,14 @@ It also assumes that the pattern in cyclic behavior will vary by location (provi
 We can write a model for virus prevalence over time in each province $i$ and district $j$, $p_{ij}(t)$ as:
 
 $$
-p_{i,j}(t) = \Beta_0 + \beta_i + c_{i,j} + f_{global,t}(month_of_year) + f_{i,j,t}(month_of_year) + \alpha p_{i,j}(t-1) 
+p_{i,j}(t) = \beta_0 + \beta_i + c_{i,j} + f_{global,t}(monthofyear) + f_{i,j,t}(monthofyear) + \alpha p_{i,j}(t-1) 
 $$
 
-Where $\Beta_0$ is a global intercept (baseline prevalence of virus in the country),
+Where $\beta_0$ is a global intercept (baseline prevalence of virus in the country),
 $\beta_i$ is a district-level random intercept,
 $c_{i,j}$ is a province-level random intercept,
-$f_{global,t}(month_of_year)$ is the global effect of month of the year
-$f_{i,j, t}(month_of_year)$ is the province level effect of month of year
+$f_{global,t}(monthofyear)$ is the global effect of month of the year
+$f_{i,j, t}(monthofyear)$ is the province level effect of month of year
 and $\alpha p_{i,j}(t-1)$ is an autoregressive term describing the dependence on the estimate at the previous time point
 
 Note we can modify this however we want, the point will just be we want something that can vary, across month of year, across years, and across provinces. 
@@ -40,16 +40,17 @@ This will be a function of the latent prevalence $p_{i,j}(t)$.
 Following what they have written (but I do not understand so we should revisit this)
 
 $$
-log(-log(1-q_{i,j,k}(t))) = \Kappa_{0} + \kappa_{k} + f_{k,t}(month_of_year) + \epsilon_{k}log(p_{i,j}(t)) 
+log(-log(1-q_{i,j,k}(t))) = \kappa_{0} + \kappa_{k} + f_{k,t}(monthofyear) + \epsilon_{k}log(p_{i,j}(t)) 
 $$
 
 
-Where $\Kappa_{0}$ is some transformed baseline probability of detecting a positive (e.g. false positive rate)
+Where $\kappa_{0}$ is some transformed baseline probability of detecting a positive (e.g. false positive rate)
 $\kappa_{k}$ is some transformed site specific intercept
-$f_{k,t}(month_of_year)$ is the site-specific effect of the month of the year (this would acount for temperature, rainfall, etc and its impact on the site's sensitivity)
+$f_{k,t}(monthofyear)$ is the site-specific effect of the month of the year (this would acount for temperature, rainfall, etc and its impact on the site's sensitivity)
 and $ \epsilon_{k}log(p_{i,j}(t))$ is the impact of prevelance on detection probability 
 
 Lastly, the observation model for ES detections, $D_{k,t}$, which will be in the form of either presence or absence in a particular site $k$ as: 
+
 $$
 D_{k,t} \sim Bernoulli(q_{i,j,k}(t))
 $$
