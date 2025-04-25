@@ -33,6 +33,7 @@ source("data_as_of_new.R") # fewer assumptions about columns (year and week not 
 # doesn't assume that the reporting triangle is in weeks and needs an additional delay to be added in days. 
 # will therefore return in the same units as input reporting triangle (so this might be weeks) 
 source("compute_exp.R")
+source("fit_disp.R")
 source("compute_nc.R") # wrapper function to call all the other functions
 source("pad_matr_d.R") # same as pad_matr but for daily data
 ```

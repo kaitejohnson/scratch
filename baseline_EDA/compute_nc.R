@@ -134,7 +134,7 @@ compute_nc <- function(observed,
                                 n_history_dispersion = n_history_dispersion,
                                 weekday_data_updates = weekday_data_updates)
   
-  # bring actual nowcast into standard format:
+  # bring actual nowcast into standard format, starting at horizon is 0
   mu <- rev(rowSums(point_forecast, na.rm = TRUE))[1:n_horizons] # re-order expecations
   # set up data frame to store:
   df_all <- NULL
