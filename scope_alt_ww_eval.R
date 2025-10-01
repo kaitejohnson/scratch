@@ -43,7 +43,8 @@ hosp_clean <- RKI_hosp_adj |>
     adj_hosp_7d_count = `fixierte_7T_Hospitalisierung_Faelle`,
     actual_hosp_7d_count = `aktualisierte_7T_Hospitalisierung_Faelle`
   ) |>
-  filter(date >= ymd("2025-03-22") - days(100),
+  filter(
+    #date >= ymd("2025-03-22") - days(100),
          state == "Berlin")
 
 RKI_ww_sites <- readr::read_tsv("https://raw.githubusercontent.com/robert-koch-institut/Abwassersurveillance_AMELAG/refs/heads/main/amelag_einzelstandorte.tsv")
@@ -55,32 +56,32 @@ ww_clean <- RKI_ww_sites |>
                 conc = "viruslast",
                 pop_cov = "einwohner",
                 change_in_lab_indicator = "laborwechsel",
-                normalized = "normalisierung",
+                normalized = "viruslast_normalisiert",
                 pathogen = "typ",
                 below_LOD = "unter_bg") |>
-  select(location, date, state, conc, pop_cov, change_in_lab_indicator, normalized, pathogen,
+  dplyr::select(location, date, state, conc, pop_cov, change_in_lab_indicator, normalized, pathogen,
          below_LOD) |>
   filter(state == "BE",
-         date >= ymd("2025-03-22") - days(100),
+         #date >= ymd("2025-03-22") - days(100),
          pathogen == "SARS-CoV-2")
 
 # Put data into format package expects 
 hosp_data <- hosp_clean |>
-  rename(daily_hosp_admits = adj_hosp_7d_count) |>
+  rename(daily_hosp_admits = actual_hosp_7d_count) |>
   mutate(state_pop = 3.87e6) |>
-  select(date,daily_hosp_admits, state_pop)
+  dplyr::select(date,daily_hosp_admits, state_pop)
 
 ww_data <- ww_clean |>
   mutate(
     lab = 1,
     log_genome_copies_per_ml = log((conc/1e3) + 1e-8),
-    log_lod = 3 # make this up for now (maybe )
+    log_lod = 0.3 # make this up for now (maybe )
   ) |>
   rename(
     site = location,
     site_pop = pop_cov
   ) |>
-  select(date, site, lab, log_genome_copies_per_ml, log_lod, site_pop, below_LOD) |>
+  dplyr::select(date, site, lab, log_genome_copies_per_ml, log_lod, site_pop, below_LOD) |>
   filter(!is.na(log_genome_copies_per_ml))
 
 # Get parameters and preprocess data 
@@ -151,7 +152,7 @@ ggplot(hosp_data_preprocessed) +
     labels = scales::date_format("%Y-%m-%d")
   ) +
   xlab("") +
-  ylab("Daily hospital admissions") +
+  ylab("7-day sum of hospital admissions") +
   ggtitle("State level hospital admissions") +
   theme_bw() +
   theme(
