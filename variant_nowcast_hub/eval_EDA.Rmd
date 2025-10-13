@@ -8,23 +8,26 @@ library(ggplot2)
 library(dplyr)
 library(hubData)
 library(readr)
+library(arrow)
 ```
 
-Test out loading in some model outputs (this will be for all nowcastd dates that have been submitted)
+Test out loading in some model outputs for a single nowcast date 
 ```{r}
-
+this_nowcast_date <- "2025-04-23"
 bucket_name <- "covid-variant-nowcast-hub"
 hub_bucket <- s3_bucket(bucket_name)
 hub_con <- hubData::connect_hub(hub_bucket, file_format = "parquet", skip_checks = TRUE)
-MA_means <- hub_con |>
-  dplyr::filter(location == "MA", output_type == "mean", 
-                clade != "recombinant") |>
+MA_data<- hub_con |>
+  dplyr::filter(location == "MA", 
+                clade != "recombinant",
+                nowcast_date == this_nowcast_date) |>
   hubData::collect_hub() |>
-  dplyr::select(model_id, nowcast_date, target_date, location, clade, value)
+  dplyr::select(model_id, nowcast_date, target_date, location, clade, value, 
+                output_type, output_type_id)
 ```
 Load in some target data for a single nowcast date (e.g. April 23)
 ```{r}
-target_data_2025_04_23 <- arrow::read_parquet("https://github.com/reichlab/variant-nowcast-hub/raw/refs/heads/adding-scores/target-data/oracle-output/nowcast_date=2025-04-23/oracle.parquet") |>
+target_data <- arrow::read_parquet(glue::glue("https://github.com/reichlab/variant-nowcast-hub/raw/refs/heads/adding-scores/target-data/oracle-output/nowcast_date={this_nowcast_date}/oracle.parquet")) |>
   filter(location == "MA")
 
 ```
@@ -32,5 +35,72 @@ target_data_2025_04_23 <- arrow::read_parquet("https://github.com/reichlab/varia
 Load in some scores (this will be for all nowcast dates that we can scores)
 ```{r}
 scores <- read_tsv("https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/adding-scores/auxiliary-data/scores/scores_2025-09-02.tsv") |>
-  filter(location == "MA")
+  filter(location == "MA", nowcast_date == this_nowcast_date)
+```
+Plot eval data and model outputs (latent proportions) for this nowcast date
+```{r}
+clades_to_vis <- c("24F", "24A", "25A", "24E")
+MA_model_outputs <- MA_data |> 
+  dplyr::filter(clade %in% clades_to_vis) |>
+  mutate(output_type_id_clade = glue::glue("{output_type_id}-{clade}"))
+n_by_day <- target_data_2025_04_23 |>
+  group_by(target_date) |>
+  summarise(n_seq = sum(oracle_value))
+eval_data <- target_data_2025_04_23 |>
+   filter(clade %in% clades_to_vis) |>
+  left_join(n_by_day, by = "target_date") |>
+  ungroup() |>
+  mutate(obs_freq = oracle_value/n_seq)
+
+ggplot() +
+  geom_line(data = MA_model_outputs  |>
+              filter(output_type == "mean"),
+            aes(x = target_date, y = value, color = clade)) +
+   geom_line(data = MA_model_outputs |>
+              filter(output_type == "sample"),
+            aes(x = target_date, y = value, color = clade,
+                group = output_type_id_clade),
+            size = 0.2, alpha = 0.2) +
+  geom_point(data = eval_data,
+             aes(x = target_date, y = obs_freq, color = clade,
+                 size = n_seq)) +
+  facet_wrap(~model_id) +
+  theme_bw() 
+```
+
+However, we really want to see the data against the prediction intervals 
+using the multinomial sampling procedure-- we can do this by expanding the 
+outputs to include samples from the predictive distribution. 
+```{r}
+MA_preds <- MA_data |>
+  
+  left_join(n_by_day, by = "target_date") |>
+  group_by(model_id, target_date, location, nowcast_date, output_type_id) |>
+  summarise(
+     n_seq = first(n_seq),
+      samples = list(lapply(1:100, function(i) {
+      counts <- as.vector(rmultinom(1, size = first(n_seq), prob = value))
+      tibble(clade = clade, count = counts, sample_id = i)
+    })),
+    .groups = "drop"
+  ) |>
+  tidyr::unnest(samples) |>
+  tidyr::unnest(samples)
+```
+Something not looking right... 
+```{r}
+ggplot() +
+  geom_line(data = MA_model_outputs  |>
+              filter(output_type == "mean"),
+            aes(x = target_date, y = value, color = clade)) +
+   geom_line(data = MA_preds |>
+               mutate(sample_id_clade = glue::glue("{clade}-{sample_id}-{output_type_id}")),
+            aes(x = target_date, y = count/n_seq, color = clade,
+                group = sample_id_clade),
+            size = 0.2, alpha = 0.2) +
+  geom_point(data = eval_data,
+             aes(x = target_date, y = obs_freq, color = clade,
+                 size = n_seq)) +
+  facet_wrap(~model_id) +
+  theme_bw() 
 ```
