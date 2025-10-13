@@ -9,16 +9,18 @@ library(dplyr)
 library(hubData)
 library(readr)
 library(arrow)
+library(scoringutils)
 ```
 
 Test out loading in some model outputs for a single nowcast date 
 ```{r}
 this_nowcast_date <- "2025-04-23"
 bucket_name <- "covid-variant-nowcast-hub"
+state<- "MA"
 hub_bucket <- s3_bucket(bucket_name)
 hub_con <- hubData::connect_hub(hub_bucket, file_format = "parquet", skip_checks = TRUE)
 MA_data<- hub_con |>
-  dplyr::filter(location == "MA", 
+  dplyr::filter(location == state, 
                 clade != "recombinant",
                 nowcast_date == this_nowcast_date) |>
   hubData::collect_hub() |>
@@ -28,14 +30,14 @@ MA_data<- hub_con |>
 Load in some target data for a single nowcast date (e.g. April 23)
 ```{r}
 target_data <- arrow::read_parquet(glue::glue("https://github.com/reichlab/variant-nowcast-hub/raw/refs/heads/adding-scores/target-data/oracle-output/nowcast_date={this_nowcast_date}/oracle.parquet")) |>
-  filter(location == "MA")
+  filter(location == state)
 
 ```
 
 Load in some scores (this will be for all nowcast dates that we can scores)
 ```{r}
 scores <- read_tsv("https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/adding-scores/auxiliary-data/scores/scores_2025-09-02.tsv") |>
-  filter(location == "MA", nowcast_date == this_nowcast_date)
+  filter(location == state, nowcast_date == this_nowcast_date)
 ```
 Plot eval data and model outputs (latent proportions) for this nowcast date
 ```{r}
@@ -104,3 +106,88 @@ ggplot() +
   facet_wrap(~model_id) +
   theme_bw() 
 ```
+Look at scores
+```{r}
+ggplot(scores) +
+  geom_line(aes(x = target_date, y = energy)) +
+  facet_wrap(~model_id) + theme_bw() +ggtitle("Energy")
+
+ggplot(scores) +
+  geom_line(aes(x = target_date, y = brier)) +
+  facet_wrap(~model_id) + theme_bw() +ggtitle("Brier")
+
+scores_summary <- scores |>
+  group_by(model_id) |>
+  summarise(mean_energy = mean(energy, na.rm = TRUE),
+            mean_brier = mean(brier, na.rm = TRUE)
+  )
+
+ggplot(scores_summary) + 
+  geom_bar(aes(x = model_id, y = mean_energy,
+               fill = model_id),
+           stat = "identity", position = "dodge") +
+  theme_bw()  + ggtitle("Energy")
+
+ggplot(scores_summary) + 
+  geom_bar(aes(x = model_id, y = mean_brier,
+               fill = model_id),
+           stat = "identity", position = "dodge") +
+  theme_bw()  + ggtitle("Brier")
+```
+Compute scaled relative skill
+```{r}
+scores2 <- scores |>
+  rename(energy_score = energy,
+         brier_score= brier,
+         model = model_id) |>
+  select(location, target_date, nowcast_date, model, energy_score,
+         brier_score) |>
+  data.table::as.data.table()
+  class(scores2) <- c("scores", class(scores2))
+  scores_su <- data.table::setattr(scores2,
+                                   "metrics",
+                                   c("brier_score", "energy_score"))
+rel_skill_es_t <- scores_su |>
+    scoringutils::add_relative_skill(metric = "energy_score",
+                                   baseline = "Hub-baseline",
+                                   by = "target_date")
+rel_skill_bs_t <- scores_su |>
+  scoringutils::add_relative_skill(metric = "brier_score",
+                                   baseline = "Hub-baseline",
+                                   by = "target_date")
+ggplot(rel_skill_es_t) +
+  geom_line(aes(x = target_date, y = energy_score_scaled_relative_skill, color = model))
+
+ggplot(rel_skill_bs) +
+  geom_line(aes(x = target_date, y = brier_score_scaled_relative_skill, color = model))
+
+
+```
+
+Repeat but overall
+```{r}
+rel_skill_es <- scores_su |>
+    scoringutils::add_relative_skill(metric = "energy_score",
+                                   baseline = "Hub-baseline") |>
+  group_by(model) |> 
+  summarise(mean_rel_skill = mean(energy_score_relative_skill, na.rm = TRUE),
+            mean_rel_scaled_skill = mean(energy_score_scaled_relative_skill, 
+                                         na.rm = TRUE))
+rel_skill_bs <- scores_su |>
+  scoringutils::add_relative_skill(metric = "brier_score",
+                                   baseline = "Hub-baseline") |>
+  group_by(model) |>
+  summarise(mean_rel_skill = mean(brier_score_relative_skill, na.rm = TRUE),
+            mean_rel_scaled_skill = mean(brier_score_scaled_relative_skill, 
+                                         na.rm = TRUE))
+
+ggplot(rel_skill_bs) +
+  geom_bar(aes(x = model, y = mean_rel_scaled_skill, fill = model),
+           stat = "identity", position = "dodge") +
+  ggtitle("Brier score")
+ggplot(rel_skill_es) +
+  geom_bar(aes(x = model, y = mean_rel_scaled_skill, fill = model),
+           stat = "identity", position = "dodge") +
+  ggtitle("Energy score")
+```
+
