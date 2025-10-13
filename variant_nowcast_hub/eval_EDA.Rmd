@@ -1,0 +1,36 @@
+---
+title: "eval_EDA"
+output: html_document
+---
+This will serve as a place to explore visualisations and analysis from the [U.S. Variant Nowcast Hub](https://github.com/reichlab/variant-nowcast-hub).
+```{r setup, message = FALSE, warning = FALSE, results = 'hide'}
+library(ggplot2)
+library(dplyr)
+library(hubData)
+library(readr)
+```
+
+Test out loading in some model outputs (this will be for all nowcastd dates that have been submitted)
+```{r}
+
+bucket_name <- "covid-variant-nowcast-hub"
+hub_bucket <- s3_bucket(bucket_name)
+hub_con <- hubData::connect_hub(hub_bucket, file_format = "parquet", skip_checks = TRUE)
+MA_means <- hub_con |>
+  dplyr::filter(location == "MA", output_type == "mean", 
+                clade != "recombinant") |>
+  hubData::collect_hub() |>
+  dplyr::select(model_id, nowcast_date, target_date, location, clade, value)
+```
+Load in some target data for a single nowcast date (e.g. April 23)
+```{r}
+target_data_2025_04_23 <- arrow::read_parquet("https://github.com/reichlab/variant-nowcast-hub/raw/refs/heads/adding-scores/target-data/oracle-output/nowcast_date=2025-04-23/oracle.parquet") |>
+  filter(location == "MA")
+
+```
+
+Load in some scores (this will be for all nowcast dates that we can scores)
+```{r}
+scores <- read_tsv("https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/adding-scores/auxiliary-data/scores/scores_2025-09-02.tsv") |>
+  filter(location == "MA")
+```
