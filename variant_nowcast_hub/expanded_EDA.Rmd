@@ -1,0 +1,138 @@
+---
+title: "expanded_EDA"
+author: "Kaitlyn Johnson"
+date: "2025-10-17"
+output: html_document
+---
+
+This will serve as a place to analyzing the predictions and corresponding scores from the [U.S. Variant Nowcast Hub](https://github.com/reichlab/variant-nowcast-hub).
+```{r setup, message = FALSE, warning = FALSE, results = 'hide'}
+library(ggplot2)
+library(dplyr)
+library(hubData)
+library(readr)
+library(arrow)
+library(scoringutils)
+library(rjson)
+```
+Load in the scores for all nowcast dates between October 8th, 2024 and June 4th, 2025. 
+I believe this still contains NAs for energy and brier scores that were partially observed as of the nowcast date (and also maybe, those that don't contain any sequences)
+```{r}
+scores <- read_tsv("https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/adding-scores/auxiliary-data/scores/scores_2025-09-02.tsv")
+```
+Make some quick and dirty plots to summarise the data
+```{r}
+summary_by_model <- scores |> 
+  group_by(model_id) |>
+  summarise(mean_energy = mean(energy, na.rm = TRUE),
+            mean_brier = mean(brier, na.rm = TRUE)
+  )
+ggplot(summary_by_model) +
+  geom_bar(aes(x = model_id, y = mean_energy, fill = model_id),
+           stat = "identity", position = "dodge") +
+  ggtitle("Mean energy score across locations and nowcast dates") +
+  theme_bw()
+
+ggplot(summary_by_model) +
+  geom_bar(aes(x = model_id, y = mean_brier, fill = model_id),
+           stat = "identity", position = "dodge") +
+  ggtitle("Mean brier score across locations and nowcast dates") +
+  theme_bw()
+```
+Across nowcast dates
+```{r}
+summary_by_model_date <- scores |> 
+  group_by(model_id, nowcast_date) |>
+  summarise(mean_energy = mean(energy, na.rm = TRUE),
+            mean_brier = mean(brier, na.rm = TRUE)
+  )
+ggplot(summary_by_model_date) +
+  geom_line(aes(x = nowcast_date, y = mean_energy, color = model_id)) +
+  ggtitle("Mean energy score by nowcast date") +
+  theme_bw()
+
+ggplot(summary_by_model_date) +
+  geom_line(aes(x = nowcast_date, y = mean_brier, color = model_id)) +
+  ggtitle("Mean brier score by nowcast date") +
+  theme_bw()
+```
+
+Across locations
+```{r}
+summary_by_model_loc <- scores |> 
+  group_by(model_id, location) |>
+  summarise(mean_energy = mean(energy, na.rm = TRUE),
+            mean_brier = mean(brier, na.rm = TRUE)
+  )
+ggplot(summary_by_model_loc) +
+  geom_bar(aes(x = location, y = mean_energy, fill = model_id),
+           stat = "identity", position = "dodge",
+           show.legend = FALSE) +
+  ggtitle("Mean energy score by nowcast date") +
+  theme_bw()
+
+ggplot(summary_by_model_loc) +
+  geom_bar(aes(x = location, y = mean_brier, fill = model_id),
+           stat = "identity", position = "dodge",
+           show.legend = FALSE) +
+  ggtitle("Mean brier score by nowcast date") +
+  theme_bw()
+
+ggplot(summary_by_model_loc |> filter(location == "CA")) +
+  geom_bar(aes(x = location, y = mean_brier, fill = model_id),
+           stat = "identity", position = "dodge") +
+  ggtitle("Mean brier score by nowcast date for CA") +
+  theme_bw()
+```
+
+We want to know what happened across the season in terms of variant emergence (and maybe also cases/hospital admissions which we can separately plot). 
+The target data contains the counts of sequences by clade, location, and collection date (labeled as target date), using the clades from the latest nowcast date (October 8th, 2025). 
+We will aggregate these across locations to get a picture of variant dynamics in the US as a whole.
+
+```{r}
+locs <- read_csv('https://raw.githubusercontent.com/cdcepi/FluSight-forecast-hub/refs/heads/main/auxiliary-data/locations.csv') |> 
+    select(abbreviation:population)
+
+dl_url <- "https://data.nextstrain.org/files/workflows/forecasts-ncov/open/nextstrain_clades/usa.tsv.gz"
+tmp_file <- tempfile()
+download.file(dl_url, tmp_file)
+latest_data <- read_tsv(gzfile(tmp_file))
+rm(tmp_file)
+
+json_location <- "https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/main/auxiliary-data/modeled-clades/2025-10-08.json"
+clades <- fromJSON(paste(readLines(json_location), collapse=""))
+fcast_clades1 <- clades$clades
+json_location <- "https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/main/auxiliary-data/modeled-clades/2024-09-11.json"
+clades <- fromJSON(paste(readLines(json_location), collapse=""))
+fcast_clades2 <- clades$clades
+json_location <- "https://raw.githubusercontent.com/reichlab/variant-nowcast-hub/refs/heads/main/auxiliary-data/modeled-clades/2025-03-12.json"
+clades <- fromJSON(paste(readLines(json_location), collapse=""))
+fcast_clades3<- clades$clades
+fcast_clades <- unique(c(fcast_clades1, fcast_clades2, fcast_clades3))
+
+
+clean_latest_data <- latest_data |> 
+  mutate(location = ifelse(location == 'Washington DC', 'District of Columbia', location)) |> 
+  mutate(location = ifelse(location == 'Deleware', 'Delaware', location)) |> 
+  mutate(location = ifelse(location == 'Louisana', 'Louisiana', location)) |> 
+  mutate(location = ifelse(grepl('Louisiana', location), 'Louisiana', location)) |> 
+  mutate(location = ifelse(location == 'Washington DC', 'District of Columbia', location)) |> 
+  filter(location %in% locs$location_name)  |>
+  mutate(clades_modeled = ifelse((clade %in% fcast_clades), clade, "other"))
+```
+
+```{r}
+US_variant_data <- clean_latest_data|>
+  group_by(clades_modeled, date) |>
+  summarise(seq_clade = sum(sequences)) |>
+  left_join(clean_latest_data |>
+              group_by(date) |>
+              summarise(n_seq = sum(sequences))
+  ) |>
+  mutate(obs_freq = seq_clade/n_seq) |>
+  filter(date >= "2024-09-11", 
+         date <= "2025-06-04")
+
+ggplot(US_variant_data) +
+  geom_line(aes(x = date, y = obs_freq, color = clades_modeled)) + theme_bw()
+```

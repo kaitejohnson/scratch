@@ -40,7 +40,7 @@ plot!(x, cdf.(prim_dist, x), label="Primary censored")
 
 # Filter out delays longer than the observation time. Can apply using the `truncated` function from Distributions.jl
 
-trunc_prim_dist = truncateed(prim_dist, upper=10)
+trunc_prim_dist = truncated(prim_dist, upper=10)
 
 # Sample from the truncated distribution
 Random.seed!(123)
