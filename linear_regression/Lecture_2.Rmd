@@ -4,7 +4,7 @@ output: html_document
 ---
 
 ```{r}
-data<- read.csv('https://www.inferentialthinking.com/data/baby.csv')
+data<- read.csv("https://raw.githubusercontent.com/data-8/textbook/refs/heads/main/assets/data/baby.csv")
 # Calculate maternal BMI (with conversion factor due to measurement in lb and in)
 data$Maternal.BMI <- 703*data$Maternal.Pregnancy.Weight/(data$Maternal.Height)**2
 
