@@ -2,10 +2,14 @@
 title: "Lecture_2"
 output: html_document
 ---
-
+Read in the baby data and create a variable for the mother's BMI category
 ```{r}
 data<- read.csv("https://raw.githubusercontent.com/data-8/textbook/refs/heads/main/assets/data/baby.csv")
-# Calculate maternal BMI (with conversion factor due to measurement in lb and in)
+head(data)
+```
+
+Calculate maternal BMI (with conversion factor due to measurement in lb and in)
+```{r}
 data$Maternal.BMI <- 703*data$Maternal.Pregnancy.Weight/(data$Maternal.Height)**2
 
 # Categorise the BMI values
@@ -16,4 +20,118 @@ data$Maternal.BMIcat[data$Maternal.BMI>=30]<-4
 
 # Tabulate the BMI categories
 table(data$Maternal.BMIcat)
+```
+
+# Model: Relate birthweight to maternal BMI (categorical)
+```{r}
+model3<-lm(Birth.Weight~factor(Maternal.BMIcat), data=data)
+summary(model3)
+```
+
+Obtain confidence intervals
+```{r}
+confint(model3, level=0.95)
+```
+
+Remove the maternal BMI category (this is a constant only model, the null hypothesis)
+
+```{r}
+model3_without<-lm(Birth.Weight~1, data=data)
+
+anova(model3, model3_without)
+```
+
+p-value=0.065 some evidence against the null hypothesis of no association between BMI and baby birthweight
+
+# Including multiple co-variates
+```{r}
+model4<-lm(Birth.Weight~Gestational.Days+Maternal.Height, data=data)
+summary(model4)
+```
+
+$\beta_1$ = expected increase in a baby's birthweight for each gestational day.
+
+
+# Centering
+Find the mean gestational days and mothers height in the data 
+
+```{r}
+summary(data$Gestational.Days)
+summary(data$Maternal.Height)
+```
+
+Create new (centered) variables in our data by subtracting the mean of each variable
+```{r}
+data$Gestational.Days.Centered<-data$Gestational.Days-mean(data$Gestational.Days)
+data$Maternal.Height.Centered<-data$Maternal.Height-mean(data$Maternal.Height)
+```
+
+Redefine Model 4 using the centered variables
+```{r}
+model4<-lm(Birth.Weight~Gestational.Days.Centered+Maternal.Height.Centered, data=data)
+summary(model4)
+```
+
+Now the intercept is 119 -- which is interpeted as the estimated mean birthweight for a child who was born after 279.1 gestational days (the mean number of days) and whose mothers height is 64 inches (the mean height).
+Other coefficients have not changed! 
+
+# Higher order terms
+Add a quadratice term 
+```{r}
+model5<-lm(Birth.Weight~Gestational.Days+I(Gestational.Days**2), data=data)
+summary(model5)
+```
+
+Coefficient on quadratic term is very small, p value is 0.241 on that coefficient suggesting no evidence against the null hypothesis
+
+# Interaction terms 
+
+Relate an outcome to two covariates but we want to allow the association between the outcome and the first covariate to differ according to the value of the second covariate. 
+
+Define a dummy variable for maternal.smoker
+```{r}
+data$Maternal.Smoker2<-0
+data$Maternal.Smoker2[data$Maternal.Smoker=="True"]<-1
+```
+
+Model without the interaction term
+```{r}
+no_int_model<-lm(data$Birth.Weight~data$Gestational.Days+factor(data$Maternal.Smoker2))
+summary(no_int_model)
+```
+
+Scatterplot
+```{r}
+plot(x = data[data$Maternal.Smoker2 == 0, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 0, ]$Birth.Weight, 
+     pch = 19, xlab = "Gestational days", ylab = "Birthweight", col = rgb(red = 0, green = 0, blue = 1, alpha = 0.25))
+abline(a = no_int_model$coefficients[1], b = no_int_model$coefficients[2], col = "blue", lwd = 2)
+points(x = data[data$Maternal.Smoker2 == 1, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 1, ]$Birth.Weight, 
+       col = rgb(red = 1, green = 0, blue = 0, alpha = 0.25), pch = 19)
+abline(a = coef(no_int_model)[1] + coef(no_int_model)[3], b = coef(no_int_model)[2], 
+       col = "red", lwd = 2)
+
+```
+Two straight lines with a common slope for smokers and non-smokers
+
+Create the interaction term
+```{r}
+data$int1<-data$Gestational.Days*data$Maternal.Smoker2
+```
+
+Include the interaction term in our model
+
+```{r}
+int_model1<-lm(data$Birth.Weight~data$Gestational.Days+factor(data$Maternal.Smoker2)+data$int1)
+summary(int_model1)
+```
+Scatter plot 
+
+```{r}
+plot(x = data[data$Maternal.Smoker2 == 0, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 0, ]$Birth.Weight, 
+     pch = 19, xlab = "Gestational days", ylab = "Birthweight", col = rgb(red = 0, green = 0, blue = 1, alpha = 0.25))
+abline(a = int_model1$coefficients[1], b = int_model1$coefficients[2], col = "blue", lwd = 2)
+points(x = data[data$Maternal.Smoker2 == 1, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 1, ]$Birth.Weight, 
+       col = rgb(red = 1, green = 0, blue = 0, alpha = 0.25), pch = 19)
+abline(a = coef(int_model1)[1] + coef(int_model1)[3], b = coef(int_model1)[2] + coef(int_model1)[4], 
+       col = "red", lwd = 2)
 ```
