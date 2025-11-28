@@ -1,0 +1,232 @@
+---
+title: "Practical Linear Regression 2"
+author: "Kaitlyn Johnson"
+date: "2025-11-28"
+output: html_document
+---
+# Load in packages
+```{r}
+library(dplyr)
+```
+
+# Load the data
+```{r}
+load("FEV.RData")
+head(FEVdata)
+```
+
+
+# Q1: What is the relationship between FEV and geographical region?
+
+i. How many people are in each UK country?
+```{r}
+summary_by_region <- FEVdata |> 
+  group_by(region) |>
+  summarise(pop = n(),
+            mean_fev = mean(fev))
+head(summary_by_region)
+```
+
+ii. Explore the relationship between FEV and geographical region
+```{r}
+ggplot(FEVdata) + geom_violin(aes(x = region, y = fev)) +
+  geom_point(data = summary_by_region,
+             aes(x = region, y = mean_fev)) +
+  theme_bw()
+ggplot(FEVdata) + geom_boxplot(aes(x = region, y = fev))
+```
+Range and median are both similar across all regions of the UK. 
+
+iii. Linear regression model with FEV as the outcome and geographical regions as the
+predictor is as follows:
+
+$$ Y_i  = \beta_0 + \beta_1U_{1i} + \beta_2U_{2i} + \beta_3U_{3i} + \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2) $ 
+
+$U_1$ = Indicator variable for Northern Ireland (1 = from Northern Ireland, 0 = not from Northern Ireland)
+$U_2$ = Indicator variable for Scotland (1 = from Scotland, 0 = not from Scotland)
+$U_3$ = Indicator variable for Wales (1 = from Wales, 0 = not from Wales)
+
+$\beta_0$ is the intercept and $\beta_1$, $\beta_2$, $\beta_3$ are the regression coefficients for Northern Ireland, Scotland, and Wales respectively
+iv. Run the regression
+```{r}
+region_model <- lm(fev ~ factor(region), data = FEVdata)
+summary(region_model)
+```
+Interpretation:
+$\beta_0$ is the intercept, which can be interpreted as the average FEV for a person living in the reference region, which we set as England.
+$\beta_1$ is the coefficient for Northern Ireland, which can be interpreted as the average difference in FEV for a person living in Northern Ireland versus England. 
+$\beta_2$ is the coefficient for Scotland, which can be interpreted as the average difference in FEV for a person living in Scotland versus England. 
+$\beta_3$ is the coefficient for Wales, which can be interpreted as the average difference in FEV for a person living in Wales versus England. 
+
+v. Interpretation of p-values
+P-values are provided for each of the three coefficients relating FEV to region, but we are typically interested in the broader question of whether region is related to FEV, rather than whether an individual dummy variable is related to the outcome.
+
+vi. Null hypothesis:
+$$H_0: \beta_1 = 0, \beta_2 = 0, \beta_3 = 0$$
+$H_1$: at least one of $\beta_1, \beta_2, \beta_3 \neq 0$
+
+We'll use a partial F-statistic to test this hypothesis. 
+```{r}
+model_without <- lm(fev ~ 1, data = FEVdata)
+anova(region_model, model_without)
+```
+p-value of 0.2
+
+vii. P-value is large, indicating a lack of evidence against the null hypothesis. There is no evidence of an assocation between geographical region and FEV.
+
+
+# Q2: Investigate the relationship between FEV with ange and smoking status
+
+i. We can write a linear regression model with FEV as the outcome and age and smoking status as predictors
+
+$$ Y_i = \beta_0 + \beta_1(X_{1i} - 10) + \beta_2X_{2i} + \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2)$
+
+$Y_{1i}$ is the FEV for the ith person
+$X_{1i}$ is age of the ith person in years
+$X_{2i}$ is smoking status (0 is a non-smoker, 1 is a smoker) of the ith person
+
+ii. Run the regression
+```{r}
+FEVdata <- FEVdata |>
+  mutate(age_centered = age - 10,
+         smoke_code = ifelse(smoke == "current smoker", 1, 0)
+  )
+model2 <- lm(fev ~ age_centered + smoke_code, data = FEVdata)
+summary(model2)
+```
+iii. $\beta_0 = 2.46$ is the average FEV of a 10 year old non-smoker.
+
+iv. $\beta_1 = 0.23$ which means we would expect FEV to increase by 0.23 for each year increase in age, among people with the same smoking status.
+$beta_2 = - 0.21$ means that among people of the same age, we would expect smokers to have an FEV of 0.21 less than non-smokers. 
+
+v. For a non-smoker age 8 the expected FEV is therefore $2.67 - 0.23*2 = 2.21$
+or 
+```{r}
+model2$coefficients[1] - 2*model2$coefficients[2]
+```
+
+vi. There is evidence that both age and smoking status have an association with FEV. 
+Simple linear regression model implied that smokers had on average better lung function than non-smokers. 
+The results from this analysis imply that age was a confounder. People who smole tended to be older, and older children had better lung function. So in the analysis comparing FEV between smokers and non-smokers, the smokers has better lunch function because they were older. 
+
+# Q3: Is there a non-linear relationship between FEV and age?
+
+i. Scatterplot of FEV and age
+
+```{r}
+ggplot(FEVdata) + geom_point(aes(x = age, y = fev))
+```
+Appears there may be a non-linear relationship between FEV and age (FEV begins to stabilise sometime around age 12-15).
+
+ii. Quadratic linear regression model 
+
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{1i}^2 + \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2)$
+
+$Y_{1i}$ is the FEV for the ith person
+$X_{1i}$ is age of the ith person in years
+
+```{r}
+FEVdata <- FEVdata |>
+  mutate(age_squared = age^2)
+
+model_quadratic <- lm(fev ~ age + age_squared, data = FEVdata)
+summary(model_quadratic)
+```
+iii. Null and alternative hypotheses around whether FEV and age is non-linear
+
+$$H_0: \beta_2 = 0$$
+$$H_1:  \beta_2 \neq 0$$
+```{r}
+model_linear <- lm(fev ~ age, data = FEVdata)
+anova(model_quadratic, model_linear)
+```
+The p-value is very small which indicates evidence against the null hypothesis. 
+Therefore there is evidence of a non-linear relationship between age and FEV.
+In practice, more advanced methods that relax the assumption of linearity may be needed to acurately model this relationship.
+
+# Q4 Investingating interaction terms
+
+i. Linear regression model relating FEV to age, sex, and their interaction
+
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} + \beta_3X_{1i}*X_{2i} + \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2)$
+
+$Y_{1i}$ is the FEV for the ith person
+$X_{1i}$ is age of the ith person in years
+$X_{2i}$ is the sex of the person (0 for female, 1 for male)
+
+Run the regression
+```{r}
+FEVdata<- FEVdata |>
+  mutate(sex_code = ifelse(sex == "female", 0, 1))
+
+model_int <- lm(fev ~ age + sex_code + age*sex_code, data = FEVdata)
+summary(model_int)
+```
+$\beta_2= -0.78$ indicates that among people of the same age, males are expected to have a 0.78 lower FEV than females
+$\beta_3= 0.11$ means that the estimated increase per year of age in a male is 0.11 greater than that of a female.
+P-value small, indicating evidence that this interaction exists-- we expect the relationship between FEV and age to be different for males and females.
+
+Aligns with previous practical when we investigaed the relationship between males and females separately, (0.16 was for females and 0.27 was for males which aligns with these results) 
+
+ii. Linear regression model relating FEV to smoking, sex and their interaction
+
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} + \beta_3X_{1i}*X_{2i} \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2)$
+
+$Y_{1i}$ is the FEV for the ith person
+$X_{1i}$ is sex of the ith person (0 for female, 1 for male)
+$X_{2i}$ is the smoking status of the ith erson (0 for non-smoking, 1 for smoking)
+
+```{r}
+model_int_smoke <- lm(fev ~ sex_code + smoke_code + sex_code*smoke_code , data = FEVdata)
+summary(model_int_smoke)
+```
+
+$\beta_3= 0.42$ means that the estimated increase in FEV from smoking in a male is 0.42 greater than the estimated increase from smoking in a female, or vice versa the estimated increase from being a male as a smoker is 0.42 greater than the estimated increase from being female. 
+
+FEV for a female who smokes = 2.4 + 0.58
+FEV for a male who does not smoke = 2.4 + 0.35
+
+iii. Linear regression realted age, height, and their interaction
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} + \beta_3X_{1i}*X_{2i} + \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2)$
+
+$Y_{1i}$ is the FEV for the ith person
+$X_{1i}$ is age of the ith person in years
+$X_{2i}$ is the height of the ith person
+
+```{r}
+model_int_height <- lm(fev ~ age + height + age*height, data = FEVdata)
+summary(model_int_height)
+```
+$\beta_2 = 0.007$  is the change in slope (FEV on age) per unit increase in height, and also the change in slope (FEV on height) per unit increase in age. 
+The p-value for age and height is small indicating evidence to reject the null hypothesis, suggesting there is evidence that the association between age and FEV depends on height. 
+
+# Q5: Assessing goodness of fit
+i. Overall goodness of fit test for the linear regression model relating age and smoking status
+
+$$ Y_i = \beta_0 + \beta_1(X_{1i} - 10) + \beta_2X_{2i} + \epsilon $$
+where $ \epsilon \sim N(0, \sigma^2)$
+
+$Y_{1i}$ is the FEV for the ith person
+$X_{1i}$ is age of the ith person in years
+$X_{2i}$ is smoking status (0 is a non-smoker, 1 is a smoker) of the ith person
+
+
+Null hypothesis:
+$$H_0: \beta_1 = 0, \beta_2 = 0 = 0$$
+$H_1$: at least one of $\beta_1, \beta_2 \neq 0$
+
+```{r}
+anova(model_without, model2 )
+```
+F statistic = 443, p value very small. Smoking status and/or age explain some of the variation in FEV. 
+```{r}
+summary(model2)
+```
+R-squared - 0.5766 - the model explains 57% of the variation in Y 
+
