@@ -1,0 +1,69 @@
+---
+title: "practical_linregIII"
+output: html_document
+---
+
+# Load in packages
+```{r}
+library(dplyr)
+library(table1)
+```
+
+# Load the data
+```{r}
+load("CFdata.Rdata")
+head(CFdata)
+```
+
+Doctors decide on whether or not to prescribe DNase-- which makes all the other variables confounders.
+
+Q1: Describe the data 
+```{r}
+CFdata_by_treat <- CFdata |>
+  group_by(Dnase) |>
+  summarise(
+    prop_genotype_low = sum(Genotype == "Low")/ n(),
+    prop_lung_infection = sum(Lung_Infection == "Yes")/ n(),
+    prop_using_hss = sum(HSS == "Yes")/ n(),
+    avg_age = mean(Age),
+    avg_BMI = mean(BMI),
+    avg_baseline_FEV = mean(Baseline_FEV),
+    avg_final_FEV = mean(FEV)
+  )
+CFdata_by_treat
+```
+
+Or use table1 package
+```{r}
+baseline_table<-table1(~ factor(Sex) + factor(Genotype) + Age + BMI + Baseline_FEV +
+factor(Lung_Infection) + factor(HSS)| Dnase, data=CFdata)
+baseline_table
+```
+Those taking Dnase are on average older and have lower baseline FEV. 
+
+```{r}
+ggplot(CFdata) + geom_point(aes( x = Age, y = BMI, color = Dnase), alpha = 0.3) +
+                             facet_grid(rows = vars(Lung_Infection), 
+                                        cols = vars(Genotype))
+ggplot(CFdata) + geom_point(aes( x = Baseline_FEV, y = FEV, color = Dnase), alpha = 0.3) +
+                             facet_grid(rows = vars(Lung_Infection), 
+                                        cols = vars(Genotype))
+
+```
+
+Q2: Univariable analysis
+Simple linear regression to estimate the effect of DNase on FEV
+```{r}
+uni_model <- lm(FEV ~ factor(Dnase), data = CFdata)
+summary(uni_model)
+```
+
+```{r}
+confint(uni_model)
+```
+
+0 not in confidence interval --> evidence of a positive effect on lung function 
+
+Q3: Multivariable analysis
+Estimate the effect of DNase on FEV while adjusted for listed confounders
+
