@@ -66,4 +66,67 @@ confint(uni_model)
 
 Q3: Multivariable analysis
 Estimate the effect of DNase on FEV while adjusted for listed confounders
+```{r}
+multi_model <- lm(FEV ~ factor(Dnase) + Age + BMI + Baseline_FEV + factor(Sex) + factor(Genotype) + factor(Lung_Infection) + factor(HSS), data = CFdata)
+summary(multi_model)
+```
 
+```{r}
+confint(multi_model, parm = 2)
+```
+Accounting for confounders results in an even higher treatment effect, indicating that there is an association between DNase usage and increased FEV.
+
+Q4: Checking assumptions
+
+Residuals (Linearity)
+```{r}
+plot(multi_model$fitted.values, multi_model$residuals, main = "Residual plot", xlab="Fitted values", ylab="Residuals", pch=19)
+abline(h=0)
+
+```
+The residuals are equally distributed above and below the line of 0.
+
+QQ plot (normality)
+```{r}
+Standardised.Residuals<-rstandard(multi_model)
+qqnorm(Standardised.Residuals, main="Normal Q-Q plot", ylab="Expected normal value", xlab="Standardised Residuals")
+qqline(Standardised.Residuals)
+```
+There doesn't appear to be any serious departures from normality based on the Normal Q-Q plot.
+
+Cook's distance (outliers/influential observations)
+```{r}
+plot(multi_model, which=4)
+```
+1464 and 9841 are influential observations. 
+
+Q5: Further investigations
+1. Does the treatment efect differ for males and females?
+We will use an interaction term 
+
+```{r}
+multi_int_model <- lm(FEV ~ factor(Dnase) + factor(Sex)*factor(Dnase) + Age + BMI + Baseline_FEV + factor(Sex) + factor(Genotype) + factor(Lung_Infection) + factor(HSS), data = CFdata)
+summary(multi_int_model)
+```
+Doesn't look to be significant but do an anova to be sure
+```{r}
+anova(multi_model, multi_int_model)
+```
+p-value large -- no evidence to reject the Null.
+
+2. Does the estimated treatment effect depend on FEV at baseline? Again, use an interaction term
+```{r}
+multi_bl_model <- lm(FEV ~ factor(Dnase) + Baseline_FEV*factor(Dnase) + Age + BMI + Baseline_FEV + factor(Sex) + factor(Genotype) + factor(Lung_Infection) + factor(HSS), data = CFdata)
+summary(multi_bl_model)
+```
+
+It looks like it might but the confidence interval does go below 0
+```{r}
+confint(multi_bl_model, 10)
+```
+
+```{r}
+anova(multi_model, multi_bl_model)
+```
+
+p-value = 0.057 so weak evidence, suggests people with high FEV at baseline benefit more from treatment than people with low FEV at baseline  -- could estimate the effect for people with high and low FEV at baseline separately. 
