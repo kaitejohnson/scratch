@@ -9,12 +9,16 @@ data<- read.csv("https://raw.githubusercontent.com/data-8/textbook/refs/heads/ma
 head(data)
 ```
 
-Investigating assumptions from plots: plot gestational days vs birth weight
+# Investigating assumptions from plots: plot gestational days vs birth weight
+
 For simple linear regression with only one independent variable (predictor) this should make serious violations apparent. 
 ```{r}
 ggplot(data) + geom_point(aes(x = Gestational.Days, y = Birth.Weight))
 ```
-
+ # Example 1: Gestational days as a predictor of birth weight
+ 
+$$Y_i = \beta_0 + \beta_1X_1 + \epsilon_i$$
+Where $X_1$ is length of pregnancy, $Y_i$ is birthweight
 ```{r}
 bw_model <- lm(Birth.Weight ~ Gestational.Days, data = data)
 summary(bw_model)
