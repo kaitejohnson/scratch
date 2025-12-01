@@ -2,136 +2,269 @@
 title: "Lecture_2"
 output: html_document
 ---
+
 Read in the baby data and create a variable for the mother's BMI category
+
 ```{r}
 data<- read.csv("https://raw.githubusercontent.com/data-8/textbook/refs/heads/main/assets/data/baby.csv")
 head(data)
 ```
 
 Calculate maternal BMI (with conversion factor due to measurement in lb and in)
-```{r}
-data$Maternal.BMI <- 703*data$Maternal.Pregnancy.Weight/(data$Maternal.Height)**2
 
+```{r}
+data$Maternal.BMI <- 703*data$Maternal.Pregnancy.Weight/(data$Maternal.Height^2)
+```
+
+We want to create a discrete variable from the continuous BMI, so that we can estimate the effect of being in a particular BMI category (underweight, normal, overweight, obese) on baby birthweight.
+
+In this case, the NHS categorises BMI thresholds. Those with a BMI below 18.5 are considered overweight, between 18.5 and 25 are normal, between 25 and 30 are overweight, and greater tha 30 are considered obese. We will code these in as 1, 2, 3, and 4
+
+```{r}
 # Categorise the BMI values
-data$Maternal.BMIcat <-1
-data$Maternal.BMIcat[data$Maternal.BMI>=18.5 & data$Maternal.BMI<25]<-2
-data$Maternal.BMIcat[data$Maternal.BMI>=25   & data$Maternal.BMI<30]<-3
-data$Maternal.BMIcat[data$Maternal.BMI>=30]<-4
+data$Maternal.BMIcat <-"underweight"
+data$Maternal.BMIcat[data$Maternal.BMI>=18.5 & data$Maternal.BMI<25]<-"healthy"
+data$Maternal.BMIcat[data$Maternal.BMI>=25   & data$Maternal.BMI<30]<-"overweight"
+data$Maternal.BMIcat[data$Maternal.BMI>=30]<-"obese"
 
 # Tabulate the BMI categories
 table(data$Maternal.BMIcat)
 ```
 
-# Model: Relate birthweight to maternal BMI (categorical)
+Plot the data
+
 ```{r}
-model3<-lm(Birth.Weight~factor(Maternal.BMIcat), data=data)
-summary(model3)
+ggplot(data) +
+  geom_violin(aes(x = Maternal.BMIcat, y = Birth.Weight,
+                  fill = Maternal.BMIcat)) + theme_bw()
 ```
 
-Obtain confidence intervals
+# Example 0: Relate birthweight to maternal BMI (categorical)
+
+$$Y_i = \beta_0 + \beta_1S_{1,i} + \beta_2S_{2,i} + \beta_3S_{3,i} + \epsilon $$ Where we $S_{1,i}$ is an indicator variable with a value of 0 if the ith individual is not underweight and a variable of 1 if the ith individual is underweight. $S_{2,i}$ is an indicator variable with a value of 0 if the ith individual is not overweight and a variable of 1 if the ith individual is overweight. $S_{3,i}$ is an indicator variable with a value of 0 if the ith individual is not obese and a variable of 1 if the ith individual is obese.
+
+The "healthy" BMI category is our "reference" or baseline category -- so we can interpret the coeffecients $\beta$ as the expcted change in baby birth weight as a result of being in each of the three other BMI categories. We could also change the reference category and this shifts the interpretation of the coefficients.
+
 ```{r}
-confint(model3, level=0.95)
+model0<-lm(Birth.Weight~factor(Maternal.BMIcat), data=data, ref = "healthy")
+summary(model0)
 ```
+
+Overall, we see a pattern of higher maternal BMI associated with higher birth weights, particularly for the group with obese mothers.
+
+Obtain confidence intervals around each of the coefficients
+
+```{r}
+confint(model0, level=0.95)
+```
+
+The p-values in the summary output are provided for each of the three coefficients, rather than the broader question of whether maternal BMI is related to birth weight. When we have a categorical variable, the hypothesis of interest usually related to the combination of all the dummy variables representing the categorical variable.
+ 
+ 
+ ## Hypothesis testing and partitioning of variance
+ 
+An appropriate hypothesis test jointly tests that all coefficients for dummy variables are zero. 
+
+$$H0: \beta1 = 0, \beta2 = 0, \beta3 = 0$$ 
+$$H1: \mathrm{at least one of} \beta1, \beta2, \beta3 \neq 0$$ 
 
 Remove the maternal BMI category (this is a constant only model, the null hypothesis)
 
 ```{r}
-model3_without<-lm(Birth.Weight~1, data=data)
-
-anova(model3, model3_without)
+model_null<-lm(Birth.Weight~1, data=data)
 ```
 
-p-value=0.065 some evidence against the null hypothesis of no association between BMI and baby birthweight
+## F-test to assess whether BMI associated with baby-birth weight
+Use an F-test to test the null hypothesis.
 
-# Including multiple co-variates
 ```{r}
-model4<-lm(Birth.Weight~Gestational.Days+Maternal.Height, data=data)
-summary(model4)
+anova(model0, model_null)
+```
+Here, an F-value of 2.4 suggests that the model explains 2.4 times more variation per degree of freedom than the residual error, suggesting some relationship. 
+p-value=0.065 some evidence against the null hypothesis of no association between BMI and baby birthweight.
+
+--- 
+# Example 1: Including multiple co-variates
+
+What if we are interested in the association between both gestational days and maternal weight on baby birth weight? 
+
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} + \epsilon_i $$
+```{r}
+model1<-lm(Birth.Weight~Gestational.Days+Maternal.Pregnancy.Weight, data=data)
+summary(model1)
 ```
 
-$\beta_1$ = expected increase in a baby's birthweight for each gestational day.
+$\beta_1$ = expected increase in a baby's birthweight for each gestational day for mothers of the same weight.
+$\beta_2$ = expected increase in a baby's birthweight for each additional pound of a mother's weight for babies of the same number of gestational days.
 
+$\beta_0$ = expected baby birth weight for a mother weighing 0 pounds and having 0 gestational days (this isn't feasible!)
 
-# Centering
-Find the mean gestational days and mothers height in the data 
+# Example 2: Centering
+
+To obtain a reasonable intercept, which has some meaningful interpretation, we can center the independent variables around their means.
+
+Find the mean gestational days and mothers weight in the data
 
 ```{r}
 summary(data$Gestational.Days)
-summary(data$Maternal.Height)
+summary(data$Maternal.Pregnancy.Weight)
 ```
 
 Create new (centered) variables in our data by subtracting the mean of each variable
+
 ```{r}
 data$Gestational.Days.Centered<-data$Gestational.Days-mean(data$Gestational.Days)
-data$Maternal.Height.Centered<-data$Maternal.Height-mean(data$Maternal.Height)
+data$Maternal.Pregnancy.Weight.Centered<-data$Maternal.Pregnancy.Weight-mean(data$Maternal.Pregnancy.Weight)
 ```
 
 Redefine Model 4 using the centered variables
+$$ Y_i = \beta_0 + \beta_1(X_{1i} - \bar{X_1}) + \beta_2(X_{2i} - \bar{X_2}) + \epsilon_i $$
+
 ```{r}
-model4<-lm(Birth.Weight~Gestational.Days.Centered+Maternal.Height.Centered, data=data)
-summary(model4)
+model2<-lm(Birth.Weight~Gestational.Days.Centered+Maternal.Pregnancy.Weight.Centered, data=data)
+summary(model2)
 ```
 
-Now the intercept is 119 -- which is interpeted as the estimated mean birthweight for a child who was born after 279.1 gestational days (the mean number of days) and whose mothers height is 64 inches (the mean height).
-Other coefficients have not changed! 
+Now the intercept is 119 -- which is interpeted as the estimated mean birthweight for a child who was born after 279.1 gestational days (the mean number of days) and whose mothers weight is is 128.5 pounds (the mean pregnancy). 
 
-# Higher order terms
-Add a quadratice term 
+Notice that the other coefficients have not changed!
+
+### F-test to evaluate whether pregnancy weight and gestational days are associated with birthweight
+
+Remember we already defined our null hypothesis and the "no-assocation" model above.
 ```{r}
-model5<-lm(Birth.Weight~Gestational.Days+I(Gestational.Days**2), data=data)
-summary(model5)
+anova(model_null, model2)
+```
+F-stat = 135 means the model explains 135 times more variation per degree of freedom than the residual error. 
+P-value of < 2.2e-16 indicates we have evidence that gestational days and maternal weight are associated with baby birth weight. 
+
+
+# Example 3: Adding a quadratic term
+
+What if we have non-linearity?
+```{r}
+ggplot(data) + geom_point(aes(x = Birth.Weight, y = Gestational.Days)) +
+  theme_bw()
 ```
 
-Coefficient on quadratic term is very small, p value is 0.241 on that coefficient suggesting no evidence against the null hypothesis
+Add a quadratic term via a new variable, the square of gestational days. 
 
-# Interaction terms 
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{1i}^2 + \epsilon_i $$
 
-Relate an outcome to two covariates but we want to allow the association between the outcome and the first covariate to differ according to the value of the second covariate. 
+```{r}
+model3<-lm(Birth.Weight~Gestational.Days+I(Gestational.Days**2), data=data)
+summary(model3)
+```
 
-Define a dummy variable for maternal.smoker
+Coefficient on quadratic term is very small, p value is 0.241 on that coefficient suggesting no evidence against the null hypothesis.
+
+## F-test to test null hypothesis of no associated with the square of gestational days 
+```{r}
+model3_no_quad <- lm(Birth.Weight~Gestational.Days, data=data)
+anova(model3_no_quad, model3)
+```
+F-statistic is low (1.4) indicating the model only explains 1.4 times more variation per degree of freedom than the null hypthoesis, p-value of 0.2 indicates no evidence to reject the null hypothesis. 
+
+# Example 4: Interaction terms
+
+Relate an outcome to two covariates but we want to allow the association between the outcome and the first covariate to differ according to the value of the second covariate.
+
+Let's visualize how smoker status might affect the relationship between gestational days and birthweight.
+```{r}
+ggplot(data) + geom_point(aes(x = Maternal.Pregnancy.Weight, y = Birth.Weight, 
+                              color = Maternal.Smoker),
+                          alpha =0.3) + theme_bw()
+```
+
+Define a dummy variable for maternal smoker.
+
+
+Could do it this way or since this is treated as a factor could just use the variable directly.
 ```{r}
 data$Maternal.Smoker2<-0
 data$Maternal.Smoker2[data$Maternal.Smoker=="True"]<-1
 ```
 
 Model without the interaction term
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} + \epsilon_i $$
 ```{r}
-no_int_model<-lm(data$Birth.Weight~data$Gestational.Days+factor(data$Maternal.Smoker2))
-summary(no_int_model)
+no_int_model4<-lm(data$Birth.Weight~data$Maternal.Pregnancy.Weight+factor(data$Maternal.Smoker2))
+summary(no_int_model4)
 ```
 
 Scatterplot
+
 ```{r}
-plot(x = data[data$Maternal.Smoker2 == 0, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 0, ]$Birth.Weight, 
-     pch = 19, xlab = "Gestational days", ylab = "Birthweight", col = rgb(red = 0, green = 0, blue = 1, alpha = 0.25))
-abline(a = no_int_model$coefficients[1], b = no_int_model$coefficients[2], col = "blue", lwd = 2)
-points(x = data[data$Maternal.Smoker2 == 1, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 1, ]$Birth.Weight, 
+plot(x = data[data$Maternal.Smoker2 == 0, ]$Maternal.Pregnancy.Weight, y = data[data$Maternal.Smoker2 == 0, ]$Birth.Weight, 
+     pch = 19, xlab = "Maternal pregnancy weight", ylab = "Birthweight", col = rgb(red = 0, green = 0, blue = 1, alpha = 0.25))
+abline(a = no_int_model4$coefficients[1], b = no_int_model4$coefficients[2], col = "blue", lwd = 2)
+points(x = data[data$Maternal.Smoker2 == 1, ]$Maternal.Pregnancy.Weight, y = data[data$Maternal.Smoker2 == 1, ]$Birth.Weight, 
        col = rgb(red = 1, green = 0, blue = 0, alpha = 0.25), pch = 19)
-abline(a = coef(no_int_model)[1] + coef(no_int_model)[3], b = coef(no_int_model)[2], 
+abline(a = coef(no_int_model4)[1] + coef(no_int_model4)[3], b = coef(no_int_model4)[2], 
        col = "red", lwd = 2)
 
 ```
-Two straight lines with a common slope for smokers and non-smokers
 
-Create the interaction term
+Two straight lines with a common slope for smokers and non-smokers. 
+
+Model with the interaction term:
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} +  \beta_3X_{1i} \times X_{2i} + \epsilon_i $$
+
+Create the interaction term.
 ```{r}
-data$int1<-data$Gestational.Days*data$Maternal.Smoker2
+data$int1<-data$Maternal.Pregnancy.Weight*data$Maternal.Smoker2
 ```
 
 Include the interaction term in our model
 
 ```{r}
-int_model1<-lm(data$Birth.Weight~data$Gestational.Days+factor(data$Maternal.Smoker2)+data$int1)
-summary(int_model1)
+int_model4<-lm(data$Birth.Weight~data$Maternal.Pregnancy.Weight+factor(data$Maternal.Smoker2)+data$int1)
+summary(int_model4)
 ```
-Scatter plot 
+
+Scatter plot
 
 ```{r}
-plot(x = data[data$Maternal.Smoker2 == 0, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 0, ]$Birth.Weight, 
-     pch = 19, xlab = "Gestational days", ylab = "Birthweight", col = rgb(red = 0, green = 0, blue = 1, alpha = 0.25))
-abline(a = int_model1$coefficients[1], b = int_model1$coefficients[2], col = "blue", lwd = 2)
-points(x = data[data$Maternal.Smoker2 == 1, ]$Gestational.Days, y = data[data$Maternal.Smoker2 == 1, ]$Birth.Weight, 
+plot(x = data[data$Maternal.Smoker2 == 0, ]$Maternal.Pregnancy.Weight, y = data[data$Maternal.Smoker2 == 0, ]$Birth.Weight, 
+     pch = 19, xlab = "Maternal Pregnancy Weight", ylab = "Birthweight", col = rgb(red = 0, green = 0, blue = 1, alpha = 0.25))
+abline(a = int_model4$coefficients[1], b = int_model4$coefficients[2], col = "blue", lwd = 2)
+points(x = data[data$Maternal.Smoker2 == 1, ]$Maternal.Pregnancy.Weight, y = data[data$Maternal.Smoker2 == 1, ]$Birth.Weight, 
        col = rgb(red = 1, green = 0, blue = 0, alpha = 0.25), pch = 19)
-abline(a = coef(int_model1)[1] + coef(int_model1)[3], b = coef(int_model1)[2] + coef(int_model1)[4], 
+abline(a = coef(int_model4)[1] + coef(int_model4)[3], b = coef(int_model4)[2] + coef(int_model4)[4], 
        col = "red", lwd = 2)
 ```
+## F-test to test null hypothesis of no interaction 
+
+$$H1: \beta3 \neq 0$$
+```{r}
+anova(no_int_model4, int_model4)
+```
+High p-value and low F-statistic indicate no evidence to reject the null hypothesis that the effect of smoking is independent of weight, the effects of smoking are additive.
+
+Can continue to test for the null hypotheses of the other variables e.g. $\beta_1$ and $\beta_2$ by creating a null model that removes those terms. 
+
+# Example 5: Continuous variable interaction terms, effect of weight and gestational days on birthweight 
+
+Same model, but here $X1$ is mothers pregnancy weight and $X2$ is gestational days. 
+
+$$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{2i} +  \beta_3X_{1i} \times X_{2i} + \epsilon_i $$
+
+```{r}
+data$int2 <-data$Maternal.Pregnancy.Weight*data$Gestational.Days
+int_model5 <-lm(data$Birth.Weight~data$Maternal.Pregnancy.Weight+
+                  data$Gestational.Days+data$int2)
+summary(int_model5)
+```
+
+```{r}
+no_int_model5 <- lm(data$Birth.Weight~data$Maternal.Pregnancy.Weight+
+                  data$Gestational.Days)
+summary(no_int_model5)
+```
+
+## F-test of interaction term
+```{r}
+anova(no_int_model5, int_model5)
+```
+
+Some evidence that either the effect of gestational days on baby birthweight changes with  maternal pregnancy weight/ that the effect of maternal pregnancy weight changes with gestational days. 
