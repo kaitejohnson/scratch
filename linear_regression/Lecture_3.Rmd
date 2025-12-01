@@ -15,45 +15,31 @@ For simple linear regression with only one independent variable (predictor) this
 ```{r}
 ggplot(data) + geom_point(aes(x = Gestational.Days, y = Birth.Weight))
 ```
- # Example 1: Gestational days as a predictor of birth weight
+#Example 1: Gestational days as a predictor of birth weight
  
 $$Y_i = \beta_0 + \beta_1X_1 + \epsilon_i$$
 Where $X_1$ is length of pregnancy, $Y_i$ is birthweight
+
+
 ```{r}
 bw_model <- lm(Birth.Weight ~ Gestational.Days, data = data)
 summary(bw_model)
 ```
 
-Can reject null hypothesis that beta1 = 0
+Can reject null hypothesis that $\beta1 = 0$
 
 ```{r}
 confint(bw_model)
 ```
 
-Residual plot
-```{r}
-plot(bw_model, which = 1)
-```
-
-Unequal distribution of residuals around zero indicates non-linearity. 
-
-QQ plot
+# QQ plot: checking assumptions of normality
 ```{r}
 plot(bw_model, which = 2)
 ```
 
 
-Q-Q- plot = observed values against standard normal distribution (if perfect Y = X)
 
-Cook's distance: measure of the influence of an observation (has a lareg impact on the parameter estimate)
-Worth checking to identify outliers. 
-
-Obtained from removing the ith observation and refitting the model and comparing the new fitted values vs the ones with the complete data. Therefore the higher the D the more influential the observation 
-```{r}
-plot(bw_model, which = 4)
-```
-
-Multivariable regression: gestational days and smoking status
+# Example 2: Multivariable regression: gestational days and smoking status
 
 ```{r}
 multi_model <- lm(Birth.Weight ~ Gestational.Days + factor(Maternal.Smoker), data = data)
@@ -64,45 +50,52 @@ ggplot(data) + geom_point(aes(x = Gestational.Days, y = Birth.Weight,
                               color = Maternal.Smoker))
 ```
 
-Add interaction term 
+# Residual plot
+```{r}
+plot(multi_model$fitted.values,  multi_model$residuals, main = "Residual plot", xlab="Fitted values", ylab="Residuals", pch=19)
+abline(h=0)
+```
+OR
+```{r}
+plot(multi_model, which = 1)
+```
+# QQ plot
+
+```{r}
+plot(multi_model, which = 2)
+```
+ 
+#Cook's distance
+```{r}
+plot(multi_model, which=4)
+```
+
+
+
+
+# Example 3: Quadratic terms
+```{r}
+quad_model <- lm(Birth.Weight ~ Gestational.Days +  Gestational.Days^2, data = data)
+summary(quad_model)
+```
+
+# Example 4: Interaction terms 
 ```{r}
 int_model <- lm(Birth.Weight ~ Gestational.Days + factor(Maternal.Smoker) + Gestational.Days*factor(Maternal.Smoker), data = data)
 summary(int_model)
 ```
 Evidence that there is an interaction.
 
-# Effect of gestational days and height on birth weight 
+No interaction model:
 ```{r}
-model_gd_height<-lm(Birth.Weight~Gestational.Days+Maternal.Height, data=data)
+no_int_model <- lm(Birth.Weight ~ Gestational.Days + factor(Maternal.Smoker),
+                   data = data)
+summary(no_int_model)
 ```
 
-Residual plot
-```{r}
-plot(model_gd_height$fitted.values, model_gd_height$residuals, main = "Residual plot", xlab="Fitted values", ylab="Residuals", pch=19)
-abline(h=0)
-```
-Linearity: The residuals are equally distributed above and below zero in the plot
 
-Standardised residuals
-```{r}
-Standardised.Residuals<-rstandard(model_gd_height)
-```
 
-QQ plot
-```{r}
-qqnorm(Standardised.Residuals, main="Normal Q-Q plot", ylab="Expected normal value", xlab="Standardised Residuals")
-qqline(Standardised.Residuals)
-```
-There doesn't appear to be any serious departures from normality based on the Normal Q-Q plot
-
-Cook's distance
-```{r}
-plot(model_gd_height, which=4)
-```
-
-observations 239 is highly influential - might be worth doing a sensitivitiy analysis to assess model fit with and without these observations
-
-# ANOVA
+#Appendix:  ANOVA and R-squared
 
 $$SS_{tot} = SS_{reg} + SS_{res}$$
 $$R^2 = \frac{SS_{reg}}{SS_{tot}}$$
@@ -110,7 +103,7 @@ $$R^2 = \frac{SS_{reg}}{SS_{tot}}$$
 model_gd <- lm(Birth.Weight~Gestational.Days, data=data)
 summary(model_gd)
 ```
-Shouldn't be used to compare models because it will never decrease when new covariates are added to the model, adjusted R-sqaured can help but better to compare models other ways
+R-squared shouldn't be used to compare models because it will never decrease when new covariates are added to the model, adjusted R-sqaured can help but better to compare models other ways
 
 Nested models can be compared with Analysis of Variance (ANOVA)
 - Sum of Squares: total variation partitioned into predictable (reg) and unpredictable components (res)
@@ -143,7 +136,23 @@ anova(model_gd, model_gd_h)
 ```
 
 
+# Residual plot
+```{r}
+plot(bw_model, which = 1)
+```
 
+Unequal distribution of residuals around zero indicates non-linearity. 
+
+
+Q-Q- plot = observed values against standard normal distribution (if perfect Y = X)
+
+Cook's distance: measure of the influence of an observation (has a lareg impact on the parameter estimate)
+Worth checking to identify outliers. 
+
+Obtained from removing the ith observation and refitting the model and comparing the new fitted values vs the ones with the complete data. Therefore the higher the D the more influential the observation 
+```{r}
+plot(bw_model, which = 4)
+```
 
 
 
