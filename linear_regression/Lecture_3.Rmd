@@ -5,6 +5,8 @@ output: html_document
 
 Read in the baby data and create a variable for the mother's BMI category
 ```{r}
+library(ggplot2)
+library(dplyr)
 data<- read.csv("https://raw.githubusercontent.com/data-8/textbook/refs/heads/main/assets/data/baby.csv")
 head(data)
 ```
@@ -26,29 +28,37 @@ bw_model <- lm(Birth.Weight ~ Gestational.Days, data = data)
 summary(bw_model)
 ```
 
-Can reject null hypothesis that $\beta1 = 0$
+Can reject null hypothesis that $\beta_1 = 0$ from simple linear regression using the p-value on the predictor. 
 
+Alternatively, use the confidence intervals and see whether they contain 0. 
 ```{r}
 confint(bw_model)
 ```
+
+In this case, $\beta_1 = 0.47[0.41, 0.53]$ which provides evidence to reject the null hypothesis that $\beta_1 = 0$.
 
 # QQ plot: checking assumptions of normality
 ```{r}
 plot(bw_model, which = 2)
 ```
+# Residual plot: homoskedacity and non-linearity check
+```{r}
+plot(bw_model, which = 1)
+```
 
 
 
 # Example 2: Multivariable regression: gestational days and smoking status
+```{r}
+ggplot(data) + geom_point(aes(x = Gestational.Days, y = Birth.Weight,
+                              color = Maternal.Smoker))
+```
 
 ```{r}
 multi_model <- lm(Birth.Weight ~ Gestational.Days + factor(Maternal.Smoker), data = data)
 summary(multi_model)
 ```
-```{r}
-ggplot(data) + geom_point(aes(x = Gestational.Days, y = Birth.Weight,
-                              color = Maternal.Smoker))
-```
+
 
 # Residual plot
 ```{r}
@@ -80,9 +90,15 @@ summary(quad_model)
 ```
 
 # Example 4: Interaction terms 
+Note -- two ways to write this result in the same model
 ```{r}
 int_model <- lm(Birth.Weight ~ Gestational.Days + factor(Maternal.Smoker) + Gestational.Days*factor(Maternal.Smoker), data = data)
 summary(int_model)
+```
+These are equivalent! R lets you skip writing out the independent terms. Would recommend not using this to remind yourself of the full model you are fitting!
+```{r}
+int_model2 <- lm(Birth.Weight ~  Gestational.Days*factor(Maternal.Smoker), data = data)
+summary(int_model2)
 ```
 Evidence that there is an interaction.
 

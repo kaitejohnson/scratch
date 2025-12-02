@@ -82,7 +82,10 @@ Residuals (Linearity)
 ```{r}
 plot(multi_model$fitted.values, multi_model$residuals, main = "Residual plot", xlab="Fitted values", ylab="Residuals", pch=19)
 abline(h=0)
-
+```
+OR use the built in plotting function 
+```{r}
+plot(multi_model, which = 1)
 ```
 The residuals are equally distributed above and below the line of 0.
 
