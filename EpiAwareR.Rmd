@@ -1,0 +1,70 @@
+---
+title: "EpiAwareR"
+output: html_document
+---
+
+```{r}
+library(JuliaCall)
+
+# Force JuliaCall to find the new Julia installation
+julia_setup(force = TRUE)
+julia_command("VERSION")
+remotes::install_github("sbfnk/EpiAwareR", force = TRUE)
+library(EpiAwareR)
+epiaware_setup_julia()
+```
+
+```{r}
+
+# Load data
+training_data <- read.csv("https://raw.githubusercontent.com/EpiAware/PrototypeCompositionalProbablisticInfectiousDiseaseModelling/refs/heads/main/data/south_korea_data.csv")
+colnames(training_data)[3] <- "cases"
+```
+# Define latent process: AR(2) for log Rt
+
+```{r}
+ar2 <- AR(
+  order = 2,
+  damp_priors = list(
+    truncnorm(0.2, 0.2, 0, 1),
+    truncnorm(0.1, 0.05, 0, 1)
+  ),
+  init_priors = list(norm(0, 0.2), norm(0, 0.2)),
+  std_prior = halfnorm(0.1)
+)
+≈
+```
+# Define infection model: Renewal process
+
+```{r}
+renewal <- Renewal(
+  gen_distribution = gamma_dist(6.5, 0.62),
+  initialisation_prior = norm(log(1.0), 0.1)
+)
+
+# Define observation model: Negative binomial
+negbin <- NegativeBinomialError(
+  cluster_factor_prior = halfnorm(0.1)
+)
+
+# Compose into complete model
+model <- EpiProblem(
+  epi_model = renewal,
+  latent_model = ar2,
+  observation_model = negbin,
+  tspan = c(45, 80)
+)
+
+# Fit model
+results <- fit(
+  model,
+  data = training_data,
+  method = nuts_sampler(warmup = 1000, draws = 1000, chains = 4)
+)
+
+# Examine results
+print(results)
+summary(results)
+plot(results, type = "Rt")
+plot(results, type = "cases")
+```

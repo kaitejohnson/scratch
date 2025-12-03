@@ -104,7 +104,7 @@ plot(multi_model, which=4)
 1464 and 9841 are influential observations. 
 
 Q5: Further investigations
-1. Does the treatment efect differ for males and females?
+1. Does the treatment effect differ for males and females?
 We will use an interaction term 
 
 ```{r}
