@@ -1,0 +1,250 @@
+---
+title: "weekly_reference_daily_report"
+output: html_document
+---
+
+This Rmd shows how you would use baselineowcast to:
+1. use `epidatr` to obtain and nowcast the NHSN data
+2. create example data with weekly reference dates and daily reporting and generate a nowcast
+
+Load the required packages
+```{r}
+library(epidatr)
+library(dplyr)
+library(baselinenowcast)
+library(lubridate)
+```
+
+## Part 1: NSHN nowcast
+
+Specify the location and range of reference dates to extract from the `epidatr` database.
+```{r}
+state_to_nowcast <- "ca"
+# Define references as in YYYYWW format
+epiweeks <- epidatr::epirange(202450, 202520)
+reference_dates <- epiweeks
+```
+
+Call`epidatr::pub_covidcast` to obtain cumulative case counts by reference date and report date (with the column name `issues` reprenting the report date). 
+```{r}
+nhsn_data <- epidatr::pub_covidcast(
+    source = "nhsn",
+    signal = "confirmed_admissions_covid_ew_prelim",
+    time_type = "week",
+    geo_type = "state",
+    geo_values = state_to_nowcast,
+    time_values = reference_dates,
+    issues = "*"
+  )
+head(nhsn_data)
+```
+
+We will rename columns for compatibility with baselinenowcast and convert cumulative case counts to incident case counts 
+```{r}
+all_data <- nhsn_data |>
+    select(
+      reference_date = "time_value",
+      report_date = "issue",
+      count = "value",
+      location = "geo_value",
+      "signal"
+    ) |>
+    arrange(reference_date, report_date) |>
+    group_by(across(all_of(c("reference_date", "location")))) |>
+    mutate(
+      count = count -
+        lag(
+          count,
+          default = 0,
+          order_by = report_date
+        )
+    ) |>
+    ungroup()
+```
+
+To mimic performing a nowcast in real-time, we will remove report dates occurring after the final reference date
+```{r}
+training_data <- all_data |> 
+  filter(report_date <= max(reference_date))
+
+head(training_data)
+```
+
+Use `as_reporting_triangle()` to create a reporting triangle object with a maximum delay of 15 weeks. 
+```{r}
+rep_tri <- as_reporting_triangle(training_data,
+                                 delays_unit = "weeks") |>
+  truncate_to_delay(max_delay = 15)
+print(rep_tri, nrows = NULL, n_cols = NULL)
+```
+
+# Generate a nowcast using `baselinenowcast()` and compute prediction intervals
+```{r}
+nowcast <- baselinenowcast(rep_tri)
+
+nowcast_predictions <- nowcast |>
+  group_by(reference_date) |>
+  summarise(
+    median = median(pred_count),
+    q5 = quantile(pred_count, 0.05),
+    q95 = quantile(pred_count, 0.95),
+    .groups = "drop"
+  )
+```
+
+The nowcast predicts the final cumulative count for each reference date.
+We need to compute cumulative totals from the incremental data for comparison.
+```{r}
+latest_cumulative <- training_data |>
+  arrange(reference_date, report_date) |>
+  group_by(reference_date) |>
+  summarise(
+    # Sum all incremental counts to get cumulative total as of latest report
+    latest_count = sum(count),
+    .groups = "drop"
+  )
+```
+
+Join the predictions and the latest cumulative reports
+```{r}
+comparison <- nowcast_predictions |>
+  left_join(latest_cumulative, by = "reference_date") |>
+  mutate(
+    reporting_completeness = latest_count / median * 100
+  )
+
+```
+
+Make a plot comparing the nowcasted final case counts to the latest cumulative case counts. 
+```{r}
+ggplot(comparison, aes(x = reference_date)) +
+  # Latest reported counts
+  geom_point(aes(y = latest_count, color = "Latest Reported"), size = 3) +
+  geom_line(aes(y = latest_count, color = "Latest Reported"), linewidth = 1) +
+  # Nowcast median
+  geom_point(aes(y = median, color = "Nowcast (Median)"), size = 3, shape = 17) +
+  geom_line(aes(y = median, color = "Nowcast (Median)"), linewidth = 1, linetype = "dashed") +
+  # Nowcast uncertainty
+  geom_ribbon(aes(ymin = q5, ymax = q95, fill = "90% Prediction Interval"), alpha = 0.3) +
+  labs(
+    title = "Baseline Nowcast for California COVID-19 Admissions",
+    subtitle = "Comparing latest reported counts with nowcast predictions",
+    x = "Reference Date (Week Ending)",
+    y = "Confirmed Admissions",
+    color = "Count Type",
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values = c("Latest Reported" = "#E41A1C", "Nowcast (Median)" = "#377EB8")) +
+  scale_fill_manual(values = c("90% Prediction Interval" = "#377EB8"))
+```
+
+## Part 2: Example nowcast from weekly reference dates and daily data
+
+Start by loading in the synthetic line list NSSP data of daily incident cases by reference and report date.
+This is provided as package data, called `syn_nssp_df`.
+
+
+```{r}
+syn_nssp_df
+head(syn_nssp_df)
+```
+Convert the reference dates to weekly by assigning each reference date to the Saturday ending that week
+```{r}
+syn_nssp_df_w_week <- syn_nssp_df |>
+  mutate(end_of_week_ref_date = ceiling_date(reference_date, 
+                                             "week",
+                                             week_start = 7) - days(1))
+```
+
+Create a dataset with daily report dates but weekly reference dates
+```{r}
+weekly_ref_daily_rep <- syn_nssp_df_w_week |>
+  group_by(end_of_week_ref_date,
+           report_date) |>
+  summarise(count = sum(count),
+            .groups = "drop") |>
+  rename(reference_date = end_of_week_ref_date)
+head(weekly_ref_daily_rep)
+```
+Prepare data for nowcasting by removing observations beyond the maximum reference date, and excluding any reports before the reference date (note, this might not be realistic,
+as their might be a situation where data are rolling in continuously during the week and being assigned to the end of that week Saturday). 
+```{r}
+data_to_nowcast <- weekly_ref_daily_rep |>
+  filter(report_date <= max(reference_date),
+         report_date >= reference_date)
+write_csv(data_to_nowcast, "weekly_ref_daily_rep.csv", )
+```
+
+Use `baselinenowcast` to create a reporting triangle, specifying the maximum delay of 7 weeks (but specifying in terms of days since this is your unit of delays). 
+```{r}
+rep_tri <- as_reporting_triangle(data_to_nowcast,
+                                 delays_unit = "days") |> # This is default, but showing for clarity 
+  truncate_to_delay(max_delay = 35)
+print(rep_tri, nrows = NULL, n_cols = NULL)
+```
+Generate a nowcast using the `baselinenowcast()` function
+```{r}
+nowcast_weekly_daily <- baselinenowcast(rep_tri)
+```
+Compute 95% prediction intervals 
+```{r}
+nowcast_predictions <- nowcast_weekly_daily |>
+  group_by(reference_date) |>
+  summarise(
+    median = median(pred_count),
+    q5 = quantile(pred_count, 0.05),
+    q95 = quantile(pred_count, 0.95),
+    .groups = "drop"
+  )
+```
+
+The nowcast predicts the final cumulative count for each reference date.
+We need to compute cumulative totals from the incremental data for comparison.
+```{r}
+latest_cumulative <- data_to_nowcast|>
+  arrange(reference_date, report_date) |>
+  group_by(reference_date) |>
+  summarise(
+    # Sum all incremental counts to get cumulative total as of latest report
+    latest_count = sum(count),
+    .groups = "drop"
+  )
+```
+
+Join the predictions and the latest cumulative reports
+```{r}
+comparison <- nowcast_predictions |>
+  left_join(latest_cumulative, by = "reference_date") |>
+  mutate(
+    reporting_completeness = latest_count / median * 100
+  )
+
+```
+
+Make a plot comparing the nowcasted final case counts to the latest cumulative case counts. 
+```{r}
+ggplot(comparison, aes(x = reference_date)) +
+  # Latest reported counts
+  geom_point(aes(y = latest_count, color = "Latest Reported"), size = 3) +
+  geom_line(aes(y = latest_count, color = "Latest Reported"), linewidth = 1) +
+  # Nowcast median
+  geom_point(aes(y = median, color = "Nowcast (Median)"), size = 3, shape = 17) +
+  geom_line(aes(y = median, color = "Nowcast (Median)"), linewidth = 1, linetype = "dashed") +
+  # Nowcast uncertainty
+  geom_ribbon(aes(ymin = q5, ymax = q95, fill = "90% Prediction Interval"), alpha = 0.3) +
+  labs(
+    title = "Baseline Nowcast of weekly reference dates with daily reporting",
+    subtitle = "Comparing latest reported counts with nowcast predictions",
+    x = "Reference Date (Week Ending)",
+    y = "Confirmed Admissions",
+    color = "Count Type",
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values = c("Latest Reported" = "#E41A1C", "Nowcast (Median)" = "#377EB8")) +
+  scale_fill_manual(values = c("90% Prediction Interval" = "#377EB8"))
+```
+

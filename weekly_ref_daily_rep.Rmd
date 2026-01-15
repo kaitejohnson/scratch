@@ -1,0 +1,91 @@
+---
+title: "Weekly reference dates with daily reports example"
+author: "Kaitlyn Johnson"
+date: "2026-01-15"
+output: html_document
+---
+
+Load the required packages. 
+```{r}
+library(epidatr)
+library(dplyr)
+library(baselinenowcast)
+library(lubridate)
+library(readr)
+```
+
+```{r}
+data_to_nowcast <- read_csv("weekly_ref_daily_rep.csv")
+head(data_to_nowcast)
+```
+
+Use `baselinenowcast` to create a reporting triangle, specifying the maximum delay of 7 weeks (but specifying in terms of days since this is your unit of delays). 
+```{r}
+rep_tri <- as_reporting_triangle(data_to_nowcast,
+                                 delays_unit = "days") |> # This is default, but showing for clarity 
+  truncate_to_delay(max_delay = 35)
+print(rep_tri, nrows = NULL, n_cols = NULL)
+```
+
+Generate a nowcast using the `baselinenowcast()` function
+```{r}
+nowcast_weekly_daily <- baselinenowcast(rep_tri)
+```
+Compute 95% prediction intervals 
+```{r}
+nowcast_predictions <- nowcast_weekly_daily |>
+  group_by(reference_date) |>
+  summarise(
+    median = median(pred_count),
+    q5 = quantile(pred_count, 0.05),
+    q95 = quantile(pred_count, 0.95),
+    .groups = "drop"
+  )
+```
+
+The nowcast predicts the final cumulative count for each reference date.
+We need to compute cumulative totals from the incremental data for comparison.
+```{r}
+latest_cumulative <- data_to_nowcast|>
+  arrange(reference_date, report_date) |>
+  group_by(reference_date) |>
+  summarise(
+    # Sum all incremental counts to get cumulative total as of latest report
+    latest_count = sum(count),
+    .groups = "drop"
+  )
+```
+
+Join the predictions and the latest cumulative reports
+```{r}
+comparison <- nowcast_predictions |>
+  left_join(latest_cumulative, by = "reference_date") |>
+  mutate(
+    reporting_completeness = latest_count / median * 100
+  )
+
+```
+
+Make a plot comparing the nowcasted final case counts to the latest cumulative case counts. 
+```{r}
+ggplot(comparison, aes(x = reference_date)) +
+  # Latest reported counts
+  geom_point(aes(y = latest_count, color = "Latest Reported"), size = 3) +
+  geom_line(aes(y = latest_count, color = "Latest Reported"), linewidth = 1) +
+  # Nowcast median
+  geom_point(aes(y = median, color = "Nowcast (Median)"), size = 3, shape = 17) +
+  geom_line(aes(y = median, color = "Nowcast (Median)"), linewidth = 1, linetype = "dashed") +
+  # Nowcast uncertainty
+  geom_ribbon(aes(ymin = q5, ymax = q95, fill = "90% Prediction Interval"), alpha = 0.3) +
+  labs(
+    title = "Baseline Nowcast of weekly reference dates with daily reporting",
+    subtitle = "Comparing latest reported counts with nowcast predictions",
+    x = "Reference Date (Week Ending)",
+    y = "Confirmed Admissions",
+    color = "Count Type",
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values = c("Latest Reported" = "#E41A1C", "Nowcast (Median)" = "#377EB8")) +
+  scale_fill_manual(values = c("90% Prediction Interval" = "#377EB8"))
