@@ -1,5 +1,12 @@
 GitHub cheat sheet
 
+To pull a repository from GitHub onto your local computer, clone the repo into the folder you want the repository to be saved. 
+
+`git clone <urlof repo>`
+
+You should do this only once. 
+
+
 Typical workflow for version-controlled, PR/issued workflow:
 
 1. Make an issue on GitHub 
@@ -30,3 +37,5 @@ Typical workflow for version-controlled, PR/issued workflow:
   - You should probably start projects with a template which contains some GitHub actions in CI, and set up some form of `pre-commit` hooks, which basically will lint and style your files before you push. I can show you an example and you can always find one from other projects by navigating the commit history. 
   
   There are a tonnnn of other things to do with git in the command line, these are just the basics. Definitely worth going through a [tutorial](https://product.hubspot.com/blog/git-and-github-tutorial-for-beginners) to set up your `gh auth login` etc so everything is smooth. 
+  
+  If you want to alter someones codebase and work with it (e.g. modify `EpiNow2` or `EpiEstim`) you should "fork" the repository. You can do this on GitHub, and then it shows up in your repositories, and you can work from it. To contribute back to the main codebase, you just update your fork and then click "Contribute" which opens a PR from your main branch to their main branch. 
