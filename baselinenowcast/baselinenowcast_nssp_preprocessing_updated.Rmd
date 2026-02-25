@@ -1,0 +1,113 @@
+---
+title: "baselinenowcast analysis"
+output: html_document
+date: "2026-01-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(lubridate)
+library(ggplot2)
+library(purrr)
+library(MMWRweek)
+library(tidyverse)
+library(Rnssp)
+library(baselinenowcast)
+
+
+
+```
+
+##Convert NSSP line list to aggregate counts by reference and report date
+```{r linelist}
+
+#include only CCDD category of interest
+line_list <- api_data |> 
+  filter(grepl("Broad Acute Respiratory",CCDDCategory_flat)) |> 
+  mutate(Date2=as.Date(Date, format = "%m/%d/%Y"))
+
+#define relevant diagnosis codes for syndrome of interest
+diagnoses_codes_defn <- c("A22.1", "A221", "A37", "A48.1", "A481", "B25.0", "B250", "B34.2", "B34.9", "B342", "B349", "B44.0", "B44.9", "B440", "B449", "B44.81", "B4481", "B97.2", "B97.4", "B972", "B974", "J00", "J01", "J02", "J03", "J04", "J05", "J06", "J09", "J10", "J11", "J12", "J13", "J14", "J15", "J16", "J17", "J18", "J20", "J21", "J22", "J39.8", "J398", "J40", "J47.9", "J479", "J80", "J85.1", "J851", "J95.821", "J95821", "J96.0", "J96.00", "J9600", "J96.01", "J9601", "J96.02", "J9602", "J96.2", "J960", "J962", "J96.20", "J9620", "J96.21", "J9621", "J9622", "J96.22", "J96.91", "J9691", "J98.8", "J988", "R05", "R06.03", "R0603", "R09.02", "R0902", "R09.2", "R092", "R43.0", "R43.1", "R43.2", "R430", "R431", "R432", "U07.1", "U07.2", "U071", "U072", "022.1", "0221", "034.0", "0340", "041.5", "0415", "041.81", "04181", "079.1", "079.2", "079.3", "079.6", "0791", "0792", "0793", "0796", "079.82", "079.89", "07982", "07989", "079.99", "07999", "117.3", "1173", "460", "461", "462", "463", "464", "465", "466", "461.", "461", "461.", "464.", "465.", "466.", "461", "464", "465", "466", "478.9", "4789", "480.", "482.", "483.", "484.", "487.", "488.", "480", "481", "482", "483", "484", "485", "486", "487", "488", "490", "494.1", "4941", "517.1", "5171", "518.51", "518.53", "51851", "51853", "518.6", "5186", "518.81", "518.82", "518.84", "51881", "51882", "51884", "519.8", "5198", "073.0", "0730", "781.1", "7811", "786.2", "7862", "799.02", "79902", "799.1", "7991", "033", "033.", "033", "780.60", "78060")
+
+#expand diagnosis codes updates
+syn_nssp_long <- line_list |>
+  mutate(
+    time_stamps = str_split(DischargeDiagnosisMDTUpdates, "\\{"),
+    diag_codes = str_split(DischargeDiagnosisUpdates, "\\{")
+  ) |>
+  select(-DischargeDiagnosisMDTUpdates, -DischargeDiagnosisUpdates) |>
+  unnest(cols = c(time_stamps, diag_codes)) |>  # unnest both together - keeps them paired
+  mutate(
+    time_stamp = as.POSIXct(
+      str_remove_all(str_remove(time_stamps, ".*\\}"), "[|;]+"),
+      format = "%Y-%m-%d %H:%M:%S",
+      tz = "UTC"
+    ),
+    diagnoses_codes = str_remove(diag_codes, ".*\\}")
+  ) |>
+  filter(!is.na(time_stamp), nzchar(diagnoses_codes), diagnoses_codes != ";;|")
+
+
+#filter first hit that corresponds to diagnosis codes, then order by delay from visit to diagnosis
+diagnoses_pattern <- paste(diagnoses_codes_defn, collapse = "|")
+
+first_bar_diagnosis <- syn_nssp_long |>
+  mutate(arrival_to_update_check = as.numeric(difftime(
+    time_stamp, as.POSIXct(C_Visit_Date_Time), units = "hours"
+  )))|> #identifies any visits with negative delay
+  filter(!arrival_to_update_check<0) |> #remove visits with negative delay due to concerns about data quality
+  mutate(arrival_to_update_delay = as.numeric(difftime(
+    time_stamp, as.POSIXct(C_Visit_Date_Time), units = "weeks"
+  ))) |>
+  filter(str_detect(diagnoses_codes, diagnoses_pattern)) |>  # note that this is not exact matching (e.g., J96.0 in the definition would match against J96.00, too). This is also the way Emily's code was written
+  group_by(C_Processed_BioSense_ID) |>
+  slice_min(arrival_to_update_delay, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  mutate(
+    reference_date = as.Date(C_Visit_Date_Time),
+    report_date = as.Date(time_stamp)
+  )
+
+#update column names
+clean_line_list <- first_bar_diagnosis |>
+  mutate(
+    reference_date = as.Date(C_Visit_Date_Time),
+    report_date = as.Date(time_stamp),
+    pathogen="bar"
+  ) |>
+  rename(age_group=AgeGroup) |> 
+  ungroup()
+
+#get counts of cases by reference and report date
+count_df_raw <- clean_line_list |>
+  group_by(reference_date, report_date,age_group,pathogen) |>
+  summarise(count = n()) |>
+  mutate(delay = as.integer(report_date - reference_date)) |> 
+  ungroup()
+
+#convert to weekly
+weekly_data <- count_df_raw |>
+  mutate(
+      epiweek_ref = epiweek(reference_date),
+      epiyear_ref = epiyear(reference_date),
+      epiweek_rep = epiweek(report_date),
+      epiyear_rep = epiyear(report_date),
+      mmwr_week_start_ref = MMWRweek2Date(epiyear_ref, epiweek_ref),
+      mmwr_week_start_rep = MMWRweek2Date(epiyear_rep, epiweek_rep),
+      mmwr_week_end_ref = mmwr_week_start_ref + 6,
+      mmwr_week_end_rep = mmwr_week_start_rep + 6,
+    ) |> 
+  group_by(mmwr_week_end_ref, mmwr_week_end_rep, pathogen) |> #add age group or other demographics here as needed
+  summarise(
+      count = sum(count),
+      .groups = "drop"
+    ) |> 
+  rename(reference_date=mmwr_week_end_ref,
+         report_date=mmwr_week_end_rep)
+
+```
