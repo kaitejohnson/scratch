@@ -55,9 +55,8 @@ for(i in seq_along(nowcast_dates)){
     )
   
   eval_data <- long_df |>
-    filter(delay <= max_delay,
-           reference_date <= nowcast_dates[i],
-           report_date <= nowcast_dates[i] + days(eval_window)) |>
+    filter( #delay <= max_delay,
+           reference_date <= nowcast_dates[i]) |>
     group_by(reference_date) |>
     summarise(final_count = sum(count))
   
@@ -72,7 +71,8 @@ for(i in seq_along(nowcast_dates)){
 
 # Scoring nowcasts using scoringutils-----------------------------------
 
-# Remove the days that aren't being nowcasted
+# Include only the days for which we want to evaluate. All `max_delay` days
+# are being nowcasted, but we might only want to evaluate say the last X days.
 mult_nowcasts_for_eval <- mult_nowcasts |>
   filter(reference_date >= nowcast_date - days(eval_window))
 
@@ -113,21 +113,16 @@ ggplot(scores_by_nowcast_date) +
   xlab("Nowcast date") +
   ylab("Average WIS")
 
-ggplot(mult_nowcasts_for_eval) +
-  geom_line(aes(x = reference_date, y = final_count, group = nowcast_date))+
-  xlab("Reference date") +
-  ylab("Incident BAR cases")
 
 # Visual comparison of nowcasts------------------------------------------
 # Make a plot to visually compare a few nowcasts to the initial and 
 # final count data
 
-nowcast_dates_to_visualize <-  seq(from = ymd("2025-10-08"), 
+nowcast_dates_to_visualize <-  seq(from = ymd("2025-12-10"), 
                                    to = ymd("2026-04-01"), by = "4 weeks")
 
-mult_nowcasts_filtered <- mult_nowcasts |>
-  filter(reference_date >= min(nowcast_dates_to_visualize) - days(max_delay),
-         nowcast_date %in% nowcast_dates_to_visualize)
+mult_nowcasts_filtered <- mult_nowcasts_for_eval |>
+  filter(nowcast_date %in% nowcast_dates_to_visualize) 
 
 ggplot(mult_nowcasts_filtered) + 
   geom_line(aes(x = reference_date, y = final_count, 
@@ -135,12 +130,13 @@ ggplot(mult_nowcasts_filtered) +
                 linetype = "Final evaluation data"),
                 color = "red") +
   geom_line(aes(x = reference_date, y = initial_count,
+                group = nowcast_date,
                 linetype = "Data as of nowcast date"), 
-            color = "gray") +
+            color = "pink") +
   geom_vline(aes(xintercept = nowcast_date,
                  linetype = "Date of nowcast")) +
   geom_line(aes(x = reference_date, y = `q_.50`, group = nowcast_date),
-            color = "black")+
+            color = "gray")+
   geom_ribbon(aes(x = reference_date, ymin = `q_.025`, ymax = `q_.975`, 
                   group = nowcast_date), fill = "gray", alpha = 0.25) +
   geom_ribbon(aes(x = reference_date, ymin = `q_.25`, ymax = `q_.75`,
@@ -162,7 +158,7 @@ ggplot(mult_nowcasts_filtered) +
       override.aes = list(
         color = c(
           "Final evaluation data" = "red",
-          "Data as of nowcast date" = "gray",
+          "Data as of nowcast date" = "pink",
           "Date of nowcast" = "black"
         ),
         linewidth = 1
