@@ -8,8 +8,8 @@ url_prefix <- ("https://raw.githubusercontent.com/reichlab/flu-metrocast/refs/he
 truth_data_url <- ("https://raw.githubusercontent.com/reichlab/flu-metrocast/refs/heads/main/target-data/latest-data.csv")
 
 model_names <- c("epiENGAGE-baseline", "UT-GBQR","epiforecasts-dyngam", 
-                 "VTSanghani-PRIME")
-reference_dates <- c("2025-11-22", "2025-12-06", "2025-12-20", "2026-01-03",
+                 "VTSanghani-PRIME", "NAU-Copycat")
+reference_dates <- c("2025-11-22", "2025-11-29", "2025-12-06", "2025-12-13", "2025-12-20", "2026-01-03",
                      "2026-01-24", "2026-02-14")
 locations <- c("nyc", "boston", "indianapolis")
 
@@ -34,6 +34,27 @@ df <- df_all |>
   filter(location %in% locations) |>
   left_join( truth_data, by = c("target_end_date", "location", "target"))
 
+# Score and compute coverage 
+scores <- df |>
+  as_forecast_quantile(
+    predicted = "value",
+    observed = "observation",
+    quantile_level = "output_type_id",
+    forecast_unit = c(
+      "location",
+      "reference_date",
+      "model",
+      "target_end_date"
+    )
+  ) |>
+  transform_forecasts(fun = log_shift, offset = 1) |>
+  score() 
+
+scores_log <- scores |>
+  filter(scale == "log")
+scores_natural <- scores |>
+  filter(scale == "natural")
+
 df_for_plotting <- df |>
   filter(
   output_type_id %in% c(0.025, 0.25, 0.5, 0.75, 0.975))|>
@@ -45,18 +66,18 @@ df_for_plotting <- df |>
 
         
 
-# Early growth in NYC (Nov 22, Dec 6th, Dec 20th) 
+# Early growth in NYC (Nov 22, Dec 6th, Dec 20th)---------------------------
  df_nyc <- df_for_plotting |> filter(
-   target_end_date >= "2025-10-01",
+   target_end_date >= "2025-11-01",
    target_end_date <= "2026-01-31",
-   !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14"), 
+   !reference_date %in% c("2025-12-20", "2026-01-03","2026-01-24", "2026-02-14"), 
    location == "nyc",
    model %in% c("epiENGAGE-baseline", 
                 "epiforecasts-dyngam", 
                 "UT-GBQR")) |> select(- observation) 
      
 truth_nyc <- truth_data |> filter(location == "nyc",
-               target_end_date >= "2025-10-01",
+               target_end_date >= "2025-11-01",
                target_end_date <= "2026-03-10")
  ggplot(df_nyc) + 
    geom_line(data = truth_nyc, aes(x = target_end_date, y = observation), color = "black") +
@@ -71,10 +92,117 @@ truth_nyc <- truth_data |> filter(location == "nyc",
                    fill = model), alpha = 0.3) +
    geom_vline(aes(xintercept = reference_date), linetype = "dashed") + 
    xlab('') +
-   facet_wrap(~model) + 
+   facet_wrap(~model, nrow = 3) + 
    ylab('ED visits (%)') +
    theme_bw() +
    ggtitle("New York City: early increase")
+ 
+scores_nyc_log <- scores_log |> filter(
+  target_end_date >= "2025-11-01",
+  target_end_date <= "2026-01-31",
+  !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14"), 
+  location == "nyc",
+  model %in% c("epiENGAGE-baseline", 
+               "epiforecasts-dyngam", 
+               "UT-GBQR")) |>
+  summarise_scores(by = c("model", "reference_date")) 
+p <- ggplot(scores_nyc_log) +
+  geom_bar(
+    aes(
+      x = reference_date, y = wis, fill = model
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  theme_bw() +
+  ggtitle("Scores after log transformation")
+
+scores_nyc_natural <- scores_natural |> filter(
+  target_end_date >= "2025-10-01",
+  target_end_date <= "2026-01-31",
+  !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14"), 
+  location == "nyc",
+  model %in% c("epiENGAGE-baseline", 
+               "epiforecasts-dyngam", 
+               "UT-GBQR")) |>
+  summarise_scores(by = c("model", "reference_date")) 
+p <- ggplot(scores_nyc_natural) +
+  geom_bar(
+    aes(
+      x = reference_date, y = wis, fill = model
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  theme_bw() +
+  ggtitle("Natural scale scores")
+
+# Boston at the peak--------------------------------------------------------
+
+df_boston <- df_for_plotting |> filter(
+  target_end_date >= "2025-10-01",
+  target_end_date <= "2026-01-31",
+  reference_date == "2026-01-03", 
+  location == "boston") |> 
+  select(- observation) 
+
+truth_boston <- truth_data |> filter(location == "boston",
+                                  target_end_date >= "2025-10-01",
+                                  target_end_date <= "2026-03-10")
+ggplot(df_boston) + 
+  geom_line(data = truth_boston, aes(x = target_end_date, y = observation), color = "black") +
+  geom_point(data = truth_boston, aes(x = target_end_date, y = observation), color = "black") +
+  geom_line(aes(x = target_end_date, y = `q_0.5`, color = model,
+                group = reference_date)) +
+  geom_ribbon(aes(x = target_end_date, ymin = `q_0.25`, ymax = `q_0.75`,
+                  fill = model,
+                  group = reference_date), alpha = 0.3) +
+  geom_ribbon(aes(x = target_end_date, ymin = `q_0.025`, ymax = `q_0.975`,
+                  group = reference_date,
+                  fill = model), alpha = 0.3) +
+  geom_vline(aes(xintercept = reference_date), linetype = "dashed") + 
+  xlab('') +
+  facet_wrap(~model, nrow = 5) + 
+  ylab('ED visits (%)') +
+  theme_bw() +
+  coord_cartesian(ylim = c(0, 12)) +
+  ggtitle("Boston: post-peak decline")
+
+scores_boston_log <- scores_log |> filter(
+  target_end_date >= "2025-10-01",
+  target_end_date <= "2026-01-31",
+  reference_date == "2026-01-03", 
+  location == "boston") |>
+  summarise_scores(by = c("model", "reference_date")) 
+p <- ggplot(scores_boston_log) +
+  geom_bar(
+    aes(
+      x = reference_date, y = wis, fill = model
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  theme_bw() +
+  ggtitle("Scores after log transformation")
+
+scores_boston_natural <- scores_natural |> filter(
+  target_end_date >= "2025-10-01",
+  target_end_date <= "2026-01-31",
+  reference_date == "2026-01-03",
+  location == "boston") |>
+  summarise_scores(by = c("model", "reference_date")) 
+p <- ggplot(scores_boston_natural) +
+  geom_bar(
+    aes(
+      x = reference_date, y = wis, fill = model
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  theme_bw() +
+  ggtitle("Natural scale scores")
+
+
 
 
 
