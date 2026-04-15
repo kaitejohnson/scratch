@@ -10,7 +10,7 @@ truth_data_url <- ("https://raw.githubusercontent.com/reichlab/flu-metrocast/ref
 model_names <- c("epiENGAGE-baseline", "UT-GBQR","epiforecasts-dyngam", 
                  "VTSanghani-PRIME", "NAU-Copycat")
 reference_dates <- c("2025-11-22", "2025-11-29", "2025-12-06", "2025-12-13", "2025-12-20", "2026-01-03",
-                     "2026-01-24", "2026-02-14")
+                     "2026-01-24", "2026-01-31", "2026-02-07", "2026-02-14")
 locations <- c("nyc", "boston", "indianapolis")
 
 # Load in all the data for all of the examples
@@ -70,7 +70,8 @@ df_for_plotting <- df |>
  df_nyc <- df_for_plotting |> filter(
    target_end_date >= "2025-11-01",
    target_end_date <= "2026-01-31",
-   !reference_date %in% c("2025-12-20", "2026-01-03","2026-01-24", "2026-02-14"), 
+   !reference_date %in% c("2025-12-20", "2026-01-03","2026-01-24", "2026-02-14",
+                          "2026-01-31", "2026-02-17"), 
    location == "nyc",
    model %in% c("epiENGAGE-baseline", 
                 "epiforecasts-dyngam", 
@@ -100,7 +101,8 @@ truth_nyc <- truth_data |> filter(location == "nyc",
 scores_nyc_log <- scores_log |> filter(
   target_end_date >= "2025-11-01",
   target_end_date <= "2026-01-31",
-  !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14"), 
+  !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14",
+                         "2026-01-31", "2026-02-17"), 
   location == "nyc",
   model %in% c("epiENGAGE-baseline", 
                "epiforecasts-dyngam", 
@@ -192,6 +194,67 @@ scores_boston_natural <- scores_natural |> filter(
   location == "boston") |>
   summarise_scores(by = c("model", "reference_date")) 
 p <- ggplot(scores_boston_natural) +
+  geom_bar(
+    aes(
+      x = reference_date, y = wis, fill = model
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  theme_bw() +
+  ggtitle("Natural scale scores")
+
+# Indianapolis second peak--------------------------------------------
+
+df_ind <- df_for_plotting |> filter(
+  target_end_date >= "2025-11-01",
+  # target_end_date <= "2026-02-31",
+  reference_date %in% c("2026-01-24","2026-01-31", "2026-02-07", "2026-02-14"), 
+  location == "indianapolis")|> select(- observation) 
+
+truth_ind <- truth_data |> filter(location == "indianapolis",
+                                  target_end_date >= "2025-11-01",
+                                  target_end_date <= "2026-04-10")
+ggplot(df_ind) + 
+  geom_line(data = truth_ind, aes(x = target_end_date, y = observation), color = "black") +
+  geom_point(data = truth_ind, aes(x = target_end_date, y = observation), color = "black") +
+  geom_line(aes(x = target_end_date, y = `q_0.5`, color = model,
+                group = reference_date)) +
+  geom_ribbon(aes(x = target_end_date, ymin = `q_0.25`, ymax = `q_0.75`,
+                  fill = model,
+                  group = reference_date), alpha = 0.3) +
+  geom_ribbon(aes(x = target_end_date, ymin = `q_0.025`, ymax = `q_0.975`,
+                  group = reference_date,
+                  fill = model), alpha = 0.3) +
+  geom_vline(aes(xintercept = reference_date), linetype = "dashed") + 
+  xlab('') +
+  facet_wrap(~model, nrow = 5) + 
+  ylab('ED visits (%)') +
+  theme_bw() +
+  ggtitle("Indianapolis: second small peak")
+
+scores_ind_log <- scores_log |> filter(
+  target_end_date >= "2025-11-01",
+  reference_date %in% c("2026-01-24","2026-01-31", "2026-02-07", "2026-02-14"), 
+  location == "indianapolis") |>
+  summarise_scores(by = c("model", "reference_date")) 
+p <- ggplot(scores_ind_log) +
+  geom_bar(
+    aes(
+      x = reference_date, y = wis, fill = model
+    ),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  theme_bw() +
+  ggtitle("Scores after log transformation")
+
+scores_ind_natural <- scores_natural |> filter(
+  target_end_date >= "2025-10-01",
+  reference_date %in% c("2026-01-24","2026-01-31", "2026-02-07", "2026-02-14"), 
+  location == "indianapolis") |>
+  summarise_scores(by = c("model", "reference_date")) 
+p <- ggplot(scores_ind_natural) +
   geom_bar(
     aes(
       x = reference_date, y = wis, fill = model
