@@ -3,7 +3,6 @@
 # It will focus on few specific dates and models and showing both visual 
 # comparison of forecasts alongside scores
 
-
 url_prefix <- ("https://raw.githubusercontent.com/reichlab/flu-metrocast/refs/heads/main/model-output/")
 truth_data_url <- ("https://raw.githubusercontent.com/reichlab/flu-metrocast/refs/heads/main/target-data/latest-data.csv")
 
@@ -62,7 +61,54 @@ df_for_plotting <- df |>
               names_from = output_type_id, 
               values_from = value,
               names_prefix = "q_")
+# Plotting stuff-------------------------------------------------------------
 
+get_plot_theme <- function(dates = TRUE) {
+  plot_theme <- cowplot::theme_half_open() +
+    cowplot::background_grid() +
+    theme(
+      plot.background = element_rect(fill = "white"),
+      legend.text = element_text(size = 16),
+      plot.title = element_text(size = 20),
+      legend.title = element_text(size = 16),
+      axis.text.x = element_text(size = 16),
+      axis.text.y = element_text(size = 16),
+      axis.title = element_text(size = 16),
+      strip.text = element_text(size = 16),
+      strip.background = element_rect(fill = "white")
+    )
+  if (isTRUE(dates)) {
+    plot_theme <- plot_theme +
+      theme(
+        axis.text.x = element_text(
+          vjust = 1,
+          hjust = 1,
+          angle = 45,
+          size = 11
+        )
+      )
+  }
+  
+  return(plot_theme)
+}
+
+plot_components <- function() {
+  pal_models <- brewer.pal(4, "Spectral")
+  model_colors <- c(
+    "epiENGAGE-baseline" = "gray",
+    "epiforecasts-dyngam" = pal_models[1],
+    "NAU-Copycat" = pal_models[2],
+    "UT-GBQR" = pal_models[3],
+    "VTSanghani-PRIME" = pal_models[4]
+  )
+  plot_comp_list <-
+    list(
+      model_colors = model_colors
+    )
+  return(plot_comp_list)
+}
+
+plot_comps <- plot_components()
 
         
 
@@ -95,14 +141,26 @@ truth_nyc <- truth_data |> filter(location == "nyc",
    xlab('') +
    facet_wrap(~model, nrow = 3) + 
    ylab('ED visits (%)') +
-   theme_bw() +
+   get_plot_theme(dates = TRUE) +
+   scale_color_manual(
+     name = "Model",
+     values = plot_comps$model_colors
+   )+ 
+   scale_fill_manual(
+     name = "Model",
+     values = plot_comps$model_colors
+   )+ 
+   scale_x_date(
+     breaks = "2 weeks",
+     date_labels = "%d %b %Y"
+   ) +
    ggtitle("New York City: early increase")
  
 scores_nyc_log <- scores_log |> filter(
   target_end_date >= "2025-11-01",
   target_end_date <= "2026-01-31",
   !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14",
-                         "2026-01-31", "2026-02-17"), 
+                         "2026-01-31"), 
   location == "nyc",
   model %in% c("epiENGAGE-baseline", 
                "epiforecasts-dyngam", 
@@ -116,13 +174,19 @@ p <- ggplot(scores_nyc_log) +
     stat = "identity",
     position = "dodge"
   ) +
-  theme_bw() +
+  get_plot_theme() +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  xlab("Forecast date") + ylab("Weighted Interval Score (WIS)")+
   ggtitle("Scores after log transformation")
 
 scores_nyc_natural <- scores_natural |> filter(
   target_end_date >= "2025-10-01",
   target_end_date <= "2026-01-31",
-  !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14"), 
+  !reference_date %in% c("2026-01-03","2026-01-24", "2026-02-14",
+                         "2026-01-31"), 
   location == "nyc",
   model %in% c("epiENGAGE-baseline", 
                "epiforecasts-dyngam", 
@@ -137,6 +201,11 @@ p <- ggplot(scores_nyc_natural) +
     position = "dodge"
   ) +
   theme_bw() +
+  get_plot_theme() +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
   ggtitle("Natural scale scores")
 
 # Boston at the peak--------------------------------------------------------
@@ -164,9 +233,21 @@ ggplot(df_boston) +
                   fill = model), alpha = 0.3) +
   geom_vline(aes(xintercept = reference_date), linetype = "dashed") + 
   xlab('') +
+  get_plot_theme(dates = TRUE) +
+  scale_color_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  scale_x_date(
+    breaks = "2 weeks",
+    date_labels = "%d %b %Y"
+  ) +
   facet_wrap(~model, nrow = 5) + 
   ylab('ED visits (%)') +
-  theme_bw() +
   coord_cartesian(ylim = c(0, 12)) +
   ggtitle("Boston: post-peak decline")
 
@@ -184,7 +265,13 @@ p <- ggplot(scores_boston_log) +
     stat = "identity",
     position = "dodge"
   ) +
-  theme_bw() +
+  get_plot_theme() +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  xlab("Forecast date") +
+  ylab("Weighted Interval Score (WIS)")+
   ggtitle("Scores after log transformation")
 
 scores_boston_natural <- scores_natural |> filter(
@@ -201,7 +288,13 @@ p <- ggplot(scores_boston_natural) +
     stat = "identity",
     position = "dodge"
   ) +
-  theme_bw() +
+  get_plot_theme() +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  xlab("Forecast date") +
+  ylab("Weighted Interval Score (WIS)")+
   ggtitle("Natural scale scores")
 
 # Indianapolis second peak--------------------------------------------
@@ -209,7 +302,7 @@ p <- ggplot(scores_boston_natural) +
 df_ind <- df_for_plotting |> filter(
   target_end_date >= "2025-11-01",
   # target_end_date <= "2026-02-31",
-  reference_date %in% c("2026-01-24","2026-01-31", "2026-02-07", "2026-02-14"), 
+  reference_date %in% c("2026-01-24"), 
   location == "indianapolis")|> select(- observation) 
 
 truth_ind <- truth_data |> filter(location == "indianapolis",
@@ -228,14 +321,26 @@ ggplot(df_ind) +
                   fill = model), alpha = 0.3) +
   geom_vline(aes(xintercept = reference_date), linetype = "dashed") + 
   xlab('') +
+  get_plot_theme(dates = TRUE) +
+  scale_color_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  scale_x_date(
+    breaks = "2 weeks",
+    date_labels = "%d %b %Y"
+  ) +
   facet_wrap(~model, nrow = 5) + 
   ylab('ED visits (%)') +
-  theme_bw() +
   ggtitle("Indianapolis: second small peak")
 
 scores_ind_log <- scores_log |> filter(
   target_end_date >= "2025-11-01",
-  reference_date %in% c("2026-01-24","2026-01-31", "2026-02-07", "2026-02-14"), 
+  reference_date %in% c("2026-01-24"), 
   location == "indianapolis") |>
   summarise_scores(by = c("model", "reference_date")) 
 p <- ggplot(scores_ind_log) +
@@ -246,12 +351,18 @@ p <- ggplot(scores_ind_log) +
     stat = "identity",
     position = "dodge"
   ) +
-  theme_bw() +
+  get_plot_theme(dates = TRUE) +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  xlab("Weighted Interval Score (WIS)") +
+  ylab("Forecast Date") + 
   ggtitle("Scores after log transformation")
 
 scores_ind_natural <- scores_natural |> filter(
   target_end_date >= "2025-10-01",
-  reference_date %in% c("2026-01-24","2026-01-31", "2026-02-07", "2026-02-14"), 
+  reference_date %in% c("2026-01-24"), 
   location == "indianapolis") |>
   summarise_scores(by = c("model", "reference_date")) 
 p <- ggplot(scores_ind_natural) +
@@ -262,7 +373,13 @@ p <- ggplot(scores_ind_natural) +
     stat = "identity",
     position = "dodge"
   ) +
-  theme_bw() +
+  get_plot_theme(dates = TRUE) +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  )+ 
+  xlab("Weighted Interval Score (WIS)") +
+  ylab("Forecast Date") + 
   ggtitle("Natural scale scores")
 
 
