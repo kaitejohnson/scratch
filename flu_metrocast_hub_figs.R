@@ -343,6 +343,42 @@ scores_ind_log <- scores_log |> filter(
   reference_date %in% c("2026-01-24"), 
   location == "indianapolis") |>
   summarise_scores(by = c("model", "reference_date")) 
+
+scores_ind_log_long <- scores_ind_log |>
+  pivot_longer(cols = c("overprediction", "underprediction", "dispersion")) |>
+  mutate(
+    `WIS breakdown` = factor(name, levels = c(
+      "overprediction",
+      "dispersion",
+      "underprediction"
+    ))
+  )
+p <- ggplot(scores_ind_log_long) +
+  geom_bar(
+    aes(
+      x = model, y = value, fill = model,
+      alpha = `WIS breakdown`
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  get_plot_theme() +
+  scale_fill_manual(
+    name = "Model",
+    values = plot_comps$model_colors
+  ) +
+
+  guides(
+    alpha = guide_legend(
+      title.position = "top",
+      title.hjust = 0.5,
+      nrow = 3,
+    ),
+    fill = "none"
+  ) +
+  xlab("") +
+  ylab("WIS") +
+  theme(axis.text.x = element_blank())
 p <- ggplot(scores_ind_log) +
   geom_bar(
     aes(
