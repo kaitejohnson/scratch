@@ -1,0 +1,2 @@
+# This script is designed to evaluate the performance of baselinenowcast as we diminish the number of cases. 
+# Can be used to provide an suggestion for when its best not to rely on baselinenowcast for nowcasting as it is likely to over predict
