@@ -15,8 +15,8 @@ long_df <- syn_nssp_df |>
   mutate(delay = as.integer(report_date - reference_date))
 # Set up the nowcast dates that you want to produce retrospective nowcasts for
 nowcast_dates <- seq(from = ymd("2025-12-10"), 
-                     to = ymd("2026-04-01"), by = "week")
-mean_n_per_week <- c(4270, 400, 50, 10, 5, 2)
+                    to = ymd("2026-04-01"), by = "week")
+mean_n_per_week <- c(400, 50, 10, 7, 5, 3)
 mult_factor_mu <- mean_n_per_week/4270
 
 
@@ -28,10 +28,23 @@ for(j in seq_along(mult_factor_mu)){
     long_df_ds <- long_df |>
       mutate(count = rpois(n = n(),
                            lambda = count*mult_factor_mu[j]))
+    if(mean_n_per_week[j] == 3){
+      # force last value to be 0
+      long_df_ds$count[]
+    }
     # Data used for nowcasting
     training_data <- long_df_ds |> 
       filter(report_date <= nowcast_dates[i],
              reference_date <= nowcast_dates[i]) 
+    
+    # Fabricate so case counts are all zeros in past few days
+    if(mean_n_per_week[j] == 3){
+      # force last value to be 0
+      training_data<- training_data |>
+        mutate(count = ifelse((reference_date >= nowcast_dates[i] - days(4)), 0,
+               count)
+        )
+    }
     # initial reports used for comparison
     training_df_by_ref_date <- training_data |>
       group_by(reference_date) |>
@@ -181,7 +194,8 @@ ggplot(mult_nowcasts_filtered) +
     date_labels = "%b %Y"
   ) +
   xlab("Reference date") +
-  ylab("Incident BAR cases") 
+  ylab("Incident BAR cases") +
+  ggtitle("Forecast performance faceted by average case counts per week")
 
 ## Visualise performance metrics using coverage (more comparable than WIS because of magnitude) 
 
@@ -189,12 +203,15 @@ scores_by_count <- scores |>
   summarise_scores(by = "mean_n_per_week")
 
 ggplot(scores_by_count) +
-  geom_line(aes(x = mean_n_per_week, y = interval_coverage_50)) +
-  geom_line(aes(x = mean_n_per_week, y = interval_coverage_90)) +
+  geom_line(aes(x = mean_n_per_week, y = interval_coverage_50), color = "navy") +
+  geom_point(aes(x = mean_n_per_week, y = interval_coverage_50), color = "navy") +
+  geom_line(aes(x = mean_n_per_week, y = interval_coverage_90), color = "maroon4") +
+  geom_point(aes(x = mean_n_per_week, y = interval_coverage_90), color = "maroon4") +
   geom_hline(aes(yintercept = 0.5), linetype = "dashed", color = "navy") +
-  geoom_hline(aes(yintercept = 0.9), linetype = "dashed", color = "maroon4")+ 
+  geom_hline(aes(yintercept = 0.9), linetype = "dashed", color = "maroon4")+ 
   theme_bw() +
   xlab("Mean count per week") +
+  scale_x_continuous(trans = "log10") + 
   ylab("Interval coverage")
 
 
