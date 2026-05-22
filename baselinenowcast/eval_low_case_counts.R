@@ -245,7 +245,7 @@ ggplot(mult_nowcasts_filtered |> filter(mean_n_per_week == 3)) +
   ) +
   xlab("Reference date") +
   ylab("Incident BAR cases") +
-  ggtitle("Forecast performance faceted by average case counts per week")
+  ggtitle("Forecast performance faceted by nowcast date")
 
 ## Visualise performance metrics using coverage (more comparable than WIS because of magnitude) 
 
