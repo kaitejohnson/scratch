@@ -197,6 +197,56 @@ ggplot(mult_nowcasts_filtered) +
   ylab("Incident BAR cases") +
   ggtitle("Forecast performance faceted by average case counts per week")
 
+ggplot(mult_nowcasts_filtered |> filter(mean_n_per_week == 3)) + 
+  geom_line(aes(x = reference_date, y = final_count, 
+                group = nowcast_date,
+                linetype = "Final evaluation data"),
+            color = "red") +
+  geom_line(aes(x = reference_date, y = initial_count,
+                group = nowcast_date,
+                linetype = "Data as of nowcast date"), 
+            color = "pink") +
+  geom_vline(aes(xintercept = nowcast_date,
+                 linetype = "Date of nowcast")) +
+  geom_line(aes(x = reference_date, y = `q_.50`, group = nowcast_date),
+            color = "gray")+
+  geom_ribbon(aes(x = reference_date, ymin = `q_.025`, ymax = `q_.975`, 
+                  group = nowcast_date), fill = "gray", alpha = 0.25) +
+  geom_ribbon(aes(x = reference_date, ymin = `q_.25`, ymax = `q_.75`,
+                  group = nowcast_date), fill = "gray", alpha = 0.25) +
+  facet_wrap(~nowcast_date, scales = "free") + 
+  theme_bw() +
+  scale_linetype_manual(
+    name = "Observed data",
+    values = c(
+      "Final evaluation data" = "solid",
+      "Data as of nowcast date" = "solid",
+      "Date of nowcast" = "dashed"
+    ),
+    breaks = c(
+      "Final evaluation data",
+      "Data as of nowcast date",
+      "Date of nowcast"
+    ),
+    guide = guide_legend(
+      override.aes = list(
+        color = c(
+          "Final evaluation data" = "red",
+          "Data as of nowcast date" = "pink",
+          "Date of nowcast" = "black"
+        ),
+        linewidth = 1
+      )
+    )
+  ) +
+  scale_x_date(
+    date_breaks = "1 month",
+    date_labels = "%b %Y"
+  ) +
+  xlab("Reference date") +
+  ylab("Incident BAR cases") +
+  ggtitle("Forecast performance faceted by average case counts per week")
+
 ## Visualise performance metrics using coverage (more comparable than WIS because of magnitude) 
 
 scores_by_count <- scores |>
