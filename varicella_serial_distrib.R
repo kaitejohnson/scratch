@@ -50,6 +50,52 @@ cpox_uncertain_gamma_si_distr <- Gamma(shape = w_mean_shape, rate = w_mean_rate,
 samp1<- rgamma(1000, shape = w_mean_shape, rate = w_mean_rate)
 mean(samp1)
 sd(samp1)
+median(samp1)
 #mean 13.96 slightly below 14.1 in paper
 
 plot(cpox_uncertain_gamma_si_distr)
+
+## Delay from symptom onset to report
+library(EpiNow2)
+korea_gp_counts <- c(rep(0,2), rep(1,9), rep(2,8), rep(3,2), rep(4,1), rep(5,1))
+
+mean(korea_gp_counts)
+sd(korea_gp_counts)
+hist(korea_gp_counts)
+median(korea_gp_counts)
+
+print(fitdistrplus::fitdist( data = korea_gp_counts, distr  = "gamma"))
+
+mean(rgamma(1000, 2.19, 1.26))
+sd(rgamma(1000, 2.19, 1.26))
+
+#Lognormal from median and IQR 
+library(stats)
+
+# Target quantiles from reported IQR
+# Median = 3
+# IQR = 2 to 7
+q_lower <- 2
+q_upper <- 7
+p_lower <- 0.25
+p_upper <- 0.75
+
+# Closed-form solution for log-normal from two quantiles
+z_lower <- qnorm(p_lower)
+z_upper <- qnorm(p_upper)
+sdlog <- (log(q_upper) - log(q_lower)) /(z_upper - z_lower)
+meanlog <- log(q_lower) - z_lower * sdlog
+
+# Display parameters
+meanlog
+sdlog
+
+qlnorm(c(0.25, 0.5, 0.75), meanlog = meanlog,sdlog = sdlog)
+
+rcgp_dist <- LogNormal(meanlog = meanlog, sdlog = sdlog, max = 5)
+rcgp_dist_samp <- (rlnorm(1000, meanlog = meanlog, sdlog = sdlog))
+hist(rcgp_dist_samp)
+mean(rcgp_dist_samp)
+
+
+
