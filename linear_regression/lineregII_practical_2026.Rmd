@@ -1,0 +1,173 @@
+---
+title: "LinRegIIpratical"
+author: "Kaitlyn Johnson"
+date: "2026-11-24"
+output: html_document
+---
+
+```{r}
+library(parameters)
+library(dplyr)
+```
+
+```{r}
+load("data/FEVdata.Rdata")
+head(FEVdata)
+```
+
+```{r}
+table(FEVdata$smoke)
+table(FEVdata$sex)
+FEVdata$smoke <- relevel(FEVdata$smoke, ref = "non-current smoker")
+FEVdata$sex <- relevel(FEVdata$sex, ref = "male")
+table(FEVdata$smoke)
+table(FEVdata$sex)
+```
+
+```{r}
+FEVdata$age_centered <- FEVdata$age - 10
+FEVdata$height_centered <- FEVdata$height - 61
+head(FEVdata)
+```
+
+```{r}
+table(FEVdata$district)
+prop.table(table(FEVdata$district))
+```
+FEV and district
+```{r}
+boxplot(FEVdata$fev ~ FEVdata$district)
+```
+
+Define model
+
+Define three dummy variables for district, write linear equation as sum of the coefficients times the dummy variables 
+
+```{r}
+model_district <- lm(fev ~ district, data=FEVdata)
+summary(model_district)
+model_parameters(model_district)
+```
+p-values
+
+- focus on individual dummy variables assocation with FEV, not the variable "district" as a whole
+- want to assess against null that they are all 0
+- use F-test, comes out of summary 
+```{r}
+summary(model_district)
+
+# Or, equivalently, using the anova command (for testing nested models):
+model_null <- lm(fev ~ 1, data=FEVdata)
+anova(model_null, model_district)
+```
+
+Relationship between FEV and both age and smoking status
+
+Define the model with age (centered) and smoking status as covariates
+```{r}
+model_multi <- lm(fev~ age_centered + smoke, data=FEVdata)
+summary(model_multi)
+```
+Intercept is expected FEV for 10 year olds non-smokers
+0.23 for age coefficient means FEV increases by 0.23 per year increase in age among people with the same smoking status. 
+Estimated regression coefficent for smoking -0.21, so among people of the same age expect those exposed to smoke to have an FEV of 0.21 less than non-smokers 
+
+smokers in red, non-smokers in blue 
+```{r}
+pred<-predict(model_multi, newdata=FEVdata)
+plot(FEVdata$age_centered, FEVdata$fev)
+lines(FEVdata$age_centered[FEVdata$smoke=="non-current smoker"], pred[FEVdata$smoke=="non-current smoker"], col="blue")
+lines(FEVdata$age_centered[FEVdata$smoke=="current smoker"], pred[FEVdata$smoke=="current smoker"], col="red")
+```
+
+FEV of someone age 8 who doesn't smoke
+```{r}
+model_multi$coefficients[1]-2*model_multi$coefficients[2]
+```
+
+Age was likely a confounder between FEV and smoker status. 
+
+Question 3
+
+```{r}
+plot(FEVdata$age_centered, FEVdata$fev)
+```
+Centered age and centered age squared as predictors 
+```{r}
+model_nonlin <- lm(fev ~ age_centered + I(age_centered^2) + I(age_centered^3), data=FEVdata)
+model_parameters(model_nonlin)
+
+# Plot FEV against centered age
+plot(FEVdata$age_centered, FEVdata$fev)
+
+# Add the fitted line (note: age has to be ordered for this plot)
+lines(FEVdata$age_centered[order(FEVdata$age_centered)],    
+      fitted(model_nonlin)[order(FEVdata$age_centered)],
+      col = "red",  lwd = 2)
+
+```
+Testing nonlinearity: quadratic
+```{r}
+model_nonlinage <- lm(fev ~ age_centered + I(age_centered^2), data=FEVdata)
+model_linage <- lm(fev ~ age_centered, data=FEVdata)
+anova(model_linage, model_nonlinage)
+```
+Test for nonlinearity: cubic
+```{r}
+model_nonlinage <- lm(fev ~ age_centered + I(age_centered^2)  + I(age_centered^3), data=FEVdata)
+model_linage <- lm(fev ~ age_centered, data=FEVdata)
+anova(model_linage, model_nonlinage)
+```
+Null hypotheses are that beta2 =0 and/or beta3 =0, alternative is that they are not equal to 0. 
+
+Question 4 interaction terms
+
+Shorthand for writing out the interaction terms:
+```{r}
+model_interact <- lm(fev ~ age_centered*sex, data=FEVdata)
+model_parameters(model_interact)
+```
+equivalent to:
+```{r}
+model_interact <- lm(fev ~ age_centered + sex + age_centered*sex, data=FEVdata)
+model_parameters(model_interact)
+```
+- estimated change in FEV associated with one year increase in age is 0.27 for males and 0.16 for females. Estimated that females age 10 have a 0.33 lower FEV than males age 10.
+Discrepancy exacerbates with age
+
+```{r}
+pred<-predict(model_interact, newdata=FEVdata)
+plot(FEVdata$age_centered, FEVdata$fev)
+lines(FEVdata$age_centered[FEVdata$sex=="male"], pred[FEVdata$sex=="male"], col="blue")
+lines(FEVdata$age_centered[FEVdata$sex=="female"], pred[FEVdata$sex=="female"], col="red")
+```
+
+Binary/binary: smoke status and sex
+```{r}
+model_interact2 <- lm(fev ~ smoke*sex, data=FEVdata)
+model_parameters(model_interact2)
+```
+Some evidence against the null hypothesis that no interaction between sex and smoke status. 
+FEV for a male that smokes is 2.73+1.01, female who doesn't smoke = 2.73 -0.36, female who does smoke = 2.73+1.01 - 0.36 - 0.42 
+
+Continuous/continuous:centered height and centered age and their interaction 
+
+```{r}
+model_interact3 <- lm(fev ~ age_centered*height_centered, data=FEVdata)
+summary(model_interact3)
+```
+Evidence that the relationship between age and FEV does depend on height and vice versa. 
+
+We see that for taller people, older age is associated with higher FEV (better lung funtion), but for shorter people, older age is associated with lower FEV (worse function).
+
+We see that for younger people, an increase in 1-inch of height leads to a slightly higher expected FEV (slightly better lung function). For older people, an increase in 1-inch of height leads to a much greater expected FEV (better lung function).
+
+Question 5: 
+F-Test
+```{r}
+model_agesm <- lm(fev ~ age_centered + smoke, data=FEVdata) 
+summary(model_agesm)
+```
+R-squared:
+
+This means that the model explains 57.7% of the variation in FEV.

@@ -175,6 +175,7 @@ $$ Y_i = \beta_0 + \beta_1X_{1i} + \beta_2X_{1i}^2 + \epsilon_i $$
 model3<-lm(Birth.Weight~Gestational.Days+I(Gestational.Days**2), data=data)
 summary(model3)
 ```
+Note, need to wrap `Gestational.Days**2` in `I`so R evaluates it as a plan airthmetic expression. 
 
 Coefficient on quadratic term is very small, p value is 0.241 on that coefficient suggesting no evidence against the null hypothesis.
 
