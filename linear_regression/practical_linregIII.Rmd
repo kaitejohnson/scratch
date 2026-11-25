@@ -32,6 +32,35 @@ CFdata_by_treat <- CFdata |>
   )
 CFdata_by_treat
 ```
+```{r}
+sum(is.na(CFdata$FEV))
+hist(CFdata$FEV)
+summary(CFdata$FEV)
+```
+
+```{r}
+table(dnase=CFdata$Dnase)
+prop.table(table(dnase=CFdata$Dnase))
+```
+
+```{r}
+par(mfrow = c(2,2))
+
+hist(CFdata$Age)
+hist(CFdata$BMI)
+hist(CFdata$Baseline_FEV)
+
+boxplot(CFdata$Age ~ CFdata$Dnase)
+boxplot(CFdata$BMI ~ CFdata$Dnase)
+boxplot(CFdata$Baseline_FEV ~ CFdata$Dnase)
+
+
+table(sex=CFdata$Sex, dnase=CFdata$Dnase)
+table(gene=CFdata$Genotype, dnase=CFdata$Dnase)
+table(lung=CFdata$Lung_Infection, dnase=CFdata$Dnase)
+table(hss=CFdata$HSS, dnase=CFdata$Dnase)
+```
+
 
 Or use table1 package
 ```{r}
@@ -57,6 +86,9 @@ Simple linear regression to estimate the effect of DNase on FEV
 uni_model <- lm(FEV ~ factor(Dnase), data = CFdata)
 summary(uni_model)
 ```
+The people prescribed DNase at baseline had FEV at 1 year estimated to be 5.55 (95% CI (3.97, 7.12) higher than people not prescribed DNase. The p-value, p<0.001, suggests strong evidence against the null hypothesis of no difference in FEV between treatment groups.
+
+However, we have not yet accounted for potential confonders.
 
 ```{r}
 confint(uni_model)
@@ -76,6 +108,10 @@ confint(multi_model, parm = 2)
 ```
 Accounting for confounders results in an even higher treatment effect, indicating that there is an association between DNase usage and increased FEV.
 
+Estimated treatment effect 9.75. Age and baseline FEV are important predictors, strongly associated with outcome and treatment likelihood. 
+
+People taking DNase tend to be older and have worse FEV at baseline , and worse FEV at follow up (worse FEV at baseline associated with worse FEV at follow up). Explains smaller effect size in univariable analysis. 
+
 Q4: Checking assumptions
 
 Residuals (Linearity)
@@ -87,7 +123,18 @@ OR use the built in plotting function
 ```{r}
 plot(multi_model, which = 1)
 ```
+2/sqrt(n) is rule of thumb for roughly 2 standard deviations cut off, with n to adjust for large sample size. Observations that shift a coefficient by more than 0.02 standard deviations (2/sqrt(10000) = 0.02) are flagged. 
+
+```{r}
+multivariable_model <- lm(FEV ~ Dnase + Sex + Age + BMI + Genotype + Lung_Infection + HSS + Baseline_FEV, data=CFdata)
+
+# Plot of dfbetas for treatment
+plot(dfbetas(multivariable_model)[, 1])
+abline(h = 2/sqrt(10000), col = "red", lty = 2)
+abline(h = -2/sqrt(10000), col = "red", lty = 2)
+```
 The residuals are equally distributed above and below the line of 0.
+
 
 QQ plot (normality)
 ```{r}
@@ -108,9 +155,16 @@ Q5: Further investigations
 We will use an interaction term 
 
 ```{r}
+model_emsex <- lm(FEV ~ Dnase*Sex + Age + BMI + Genotype + Lung_Infection + HSS + Baseline_FEV, data=CFdata)
+model_parameters(model_emsex)
+```
+
+```{r}
 multi_int_model <- lm(FEV ~ factor(Dnase) + factor(Sex)*factor(Dnase) + Age + BMI + Baseline_FEV + factor(Sex) + factor(Genotype) + factor(Lung_Infection) + factor(HSS), data = CFdata)
 summary(multi_int_model)
 ```
+Use p-values associated with the regression parameter for the interaction term -- p - 0.116, dont expect treatment effect to be different for males and females. 
+
 Doesn't look to be significant but do an anova to be sure
 ```{r}
 anova(multi_model, multi_int_model)
@@ -122,7 +176,7 @@ p-value large -- no evidence to reject the Null.
 multi_bl_model <- lm(FEV ~ factor(Dnase) + Baseline_FEV*factor(Dnase) + Age + BMI + Baseline_FEV + factor(Sex) + factor(Genotype) + factor(Lung_Infection) + factor(HSS), data = CFdata)
 summary(multi_bl_model)
 ```
-
+p-value 0.058 -- could be considered weak evidence that there is an interaction -- positive interaction term suggests that people with high FEV at baseline benefit more from treatment than people with low FEV at baseline. 
 It looks like it might but the confidence interval does go below 0
 ```{r}
 confint(multi_bl_model, 10)
@@ -133,3 +187,35 @@ anova(multi_model, multi_bl_model)
 ```
 
 p-value = 0.057 so weak evidence, suggests people with high FEV at baseline benefit more from treatment than people with low FEV at baseline  -- could estimate the effect for people with high and low FEV at baseline separately. 
+
+```{r}
+model_emfev <- lm(FEV ~ Dnase*Baseline_FEV +  Sex + Age + BMI + Genotype + Lung_Infection + HSS, data=CFdata )
+
+# Treatment effect: 
+c1 <- coefficients(model_emfev)["DnaseYes"]
+c2 <- coefficients(model_emfev)["DnaseYes:Baseline_FEV"]   
+
+# Variances and SEs of coefficients 
+V <- vcov(model_emfev)
+v.c1 <- V["DnaseYes", "DnaseYes"]
+v.c2 <- V["DnaseYes:Baseline_FEV", "DnaseYes:Baseline_FEV"]
+cov.c1.c2 <- V["DnaseYes", "DnaseYes:Baseline_FEV"]
+
+# Fitted line 
+b.FEV <- CFdata$Baseline_FEV[order(CFdata$Baseline_FEV)]
+te <- c1 + c2*b.FEV
+
+# Variance of fitted line 
+var.te <- v.c1 + v.c2*(b.FEV)^2 + 2*cov.c1.c2*b.FEV
+
+# 95 % CI for treatment effect
+cl.te <- te - 1.96*sqrt(var.te)
+cu.te <- te + 1.96*sqrt(var.te)
+
+
+# Plot estimated treatment effect
+plot(b.FEV, te, ylim=c(0,20))
+lines(b.FEV, cl.te)
+lines(b.FEV, cu.te)
+abline(h = 0, lty = 2, col = "red")
+```
